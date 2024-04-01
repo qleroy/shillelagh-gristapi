@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shillelagh-gristapi"
+version = "0.0.6"
+dependencies = ["requests >=2.31.0", "shillelagh >=1.2.6"]
+authors = [{ name = "Quentin Leroy", email = "quentin.n.leroy@gmail.com" }]
+description = "Shillelagh adapter for querying Grist Documents."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/qleroy/shillelagh-gristapi"
+Issues = "https://github.com/qleroy/shillelagh-gristapi/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["shillelagh_gristapi*"]
+namespaces = false
+
+[project.entry-points."shillelagh.adapter"]
+gristapi = "shillelagh_gristapi.grist:GristAPI"
