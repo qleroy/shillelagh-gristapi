@@ -75,7 +75,7 @@ shillelagh
 shillelagh-gristapi
 ```
 
-SqlAlechmy URI
+SqlAlchemy URI
 
 ```txt
 shillelagh+safe://
