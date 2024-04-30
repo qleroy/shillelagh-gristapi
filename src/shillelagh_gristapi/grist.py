@@ -21,6 +21,8 @@ import urllib.parse
 import requests
 import requests_cache
 
+from . import request_cache_backend
+
 from shillelagh.adapters.base import Adapter
 from shillelagh.fields import (
     Boolean,
@@ -101,9 +103,10 @@ class GristAPI(Adapter):
         self.headers = {"Authorization": f"Bearer {api_key}"}
         self.server = server
 
+        backend = request_cache_backend()
         self._session = requests_cache.CachedSession(
             cache_name="grist_cache",
-            backend="sqlite",
+            backend=backend,
             expire_after=180,
         )
 
