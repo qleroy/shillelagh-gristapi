@@ -132,55 +132,55 @@ class GristAPI(Adapter):
 
         def gettype(type):
             if type == "Text":
-                return String(order=Order.ANY)
+                return String(order=Order.NONE)
             elif type == "Int":
-                return Integer(order=Order.ANY)
+                return Integer(order=Order.NONE)
             elif type == "Numeric":
-                return Float(order=Order.ANY)
+                return Float(order=Order.NONE)
             elif type == "Bool":
-                return Boolean(order=Order.ANY)
+                return Boolean(order=Order.NONE)
             elif type == "Choice":
-                return String(order=Order.ANY)
+                return String(order=Order.NONE)
             elif type == "ChoiceList":
-                return String(order=Order.ANY)
+                return String(order=Order.NONE)
             elif type == "Date":
-                return Date(filters=[Range], exact=False, order=Order.ANY)
+                return Date(filters=[Range], exact=False, order=Order.NONE)
             elif type.startswith("DateTime:"):
-                return DateTime(filters=[Range], exact=False, order=Order.ANY)
+                return DateTime(filters=[Range], exact=False, order=Order.NONE)
             elif type.startswith("Ref:"):
-                return String(order=Order.ANY)
+                return String(order=Order.NONE)
             elif type.startswith("RefList:"):
-                return String(order=Order.ANY)
+                return String(order=Order.NONE)
             elif type == "Attachments":
-                return String(order=Order.ANY)
+                return String(order=Order.NONE)
             else:
                 logger.debug(f"{type=}")
-                return String(order=Order.ANY)
+                return String(order=Order.NONE)
 
         labeltypes = [(c["id"], gettype(c["fields"]["type"])) for c in columns]
         self.columns: Dict[str, Field] = {lt[0]: lt[1] for lt in labeltypes}
         self.columns_datestimes = {
             k: v for k, v in self.columns.items() if type(v) in [Date, DateTime]
         }
-        self.columns["id"] = Integer(order=Order.ANY)
-        # self.columns["manualSort"] = Integer(order=Order.ANY)
+        self.columns["id"] = Integer(order=Order.NONE)
+        # self.columns["manualSort"] = Integer(order=Order.NONE)
         logger.debug(f"_set_columns_data {self.columns=}")
 
     def _set_columns_tables(self) -> Dict[str, Field]:
         self.columns = {
-            "id": String(order=Order.ANY),
+            "id": String(order=Order.NONE),
         }
 
     def _set_columns_docs(self) -> Dict[str, Field]:
         self.columns = {
-            "id": Integer(order=Order.ANY),
-            "name": String(order=Order.ANY),
-            "access": String(order=Order.ANY),
-            "orgDomain": String(order=Order.ANY),
-            "doc_id": String(order=Order.ANY),
-            "doc_name": String(order=Order.ANY),
-            "doc_createdAt": String(order=Order.ANY),
-            "doc_updatedAt": String(order=Order.ANY),
+            "id": Integer(order=Order.NONE),
+            "name": String(order=Order.NONE),
+            "access": String(order=Order.NONE),
+            "orgDomain": String(order=Order.NONE),
+            "doc_id": String(order=Order.NONE),
+            "doc_name": String(order=Order.NONE),
+            "doc_createdAt": String(order=Order.NONE),
+            "doc_updatedAt": String(order=Order.NONE),
         }
 
     def fetch_table(
