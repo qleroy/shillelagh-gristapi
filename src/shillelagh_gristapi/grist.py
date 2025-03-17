@@ -63,6 +63,7 @@ class GristAPI(Adapter):
 
     # Set this to ``True`` if the adapter doesn't access the filesystem.
     safe = True
+    supports_limit = True
 
     @staticmethod
     def supports(uri: str, fast: bool = True, **kwargs: Any) -> Optional[bool]:
@@ -78,9 +79,11 @@ class GristAPI(Adapter):
     def __init__(
         self,
         uri: str,
-        org_id: Optional[str] = None,
-        server: Optional[str] = None,
-        api_key: Optional[str] = None,
+        org_id: str,
+        server: str,
+        api_key: str,
+        expire_after: Optional[int] = None,
+        cache_name: Optional[str] = None,
     ):
         super().__init__()
 
@@ -99,15 +102,27 @@ class GristAPI(Adapter):
             server = query_string["server"][0]
         if not org_id:
             org_id = query_string["org_id"][0]
-        self.org_id = org_id
+        if not expire_after:
+            try:
+                expire_after = int(query_string["expire_after"][0])
+            except KeyError:
+                expire_after = 0
+        if not cache_name:
+            try:
+                cache_name = query_string["cache_name"][0]
+            except KeyError:
+                cache_name = "grist_cache"
         self.headers = {"Authorization": f"Bearer {api_key}"}
         self.server = server
+        self.org_id = org_id
+        self.expire_after = expire_after
+        self.cache_name = cache_name
 
         backend = request_cache_backend()
         self._session = requests_cache.CachedSession(
-            cache_name="grist_cache",
+            cache_name=self.cache_name,
             backend=backend,
-            expire_after=180,
+            expire_after=self.expire_after,
         )
 
         if self.doc_id:
@@ -127,7 +142,7 @@ class GristAPI(Adapter):
         logger.debug(f"_set_columns_data {self.table_id=}")
         url = f"{self.server}/api/docs/{self.doc_id}/tables/{self.table_id}/columns"
 
-        response = requests.get(url, headers=self.headers)
+        response = self._session.get(url, headers=self.headers)
         columns = response.json()["columns"]
 
         def gettype(type):
@@ -187,6 +202,7 @@ class GristAPI(Adapter):
         self,
         bounds: Dict[str, Filter],
         order: List[Tuple[str, RequestedOrder]],
+        limit: Optional[int] = None,
         **kwargs,
     ) -> Iterator[Row]:
         """
@@ -195,10 +211,12 @@ class GristAPI(Adapter):
         Yields a row of data
         """
         logger.debug("fetch_table")
-        url = f"{self.server}/api/docs/{self.doc_id}/tables/{self.table_id}/records"
+        if limit is None:
+            limit = 0
+        url = f"{self.server}/api/docs/{self.doc_id}/tables/{self.table_id}/records?limit={limit}"
         logger.debug(f"fetch_table {url=}")
 
-        response = requests.get(url, headers=self.headers)
+        response = self._session.get(url, headers=self.headers)
         records = response.json()["records"]
         for record in records:
             field = record["fields"]
@@ -229,7 +247,7 @@ class GristAPI(Adapter):
         """
         url = f"{self.server}/api/docs/{self.doc_id}/tables"
 
-        response = requests.get(url, headers=self.headers)
+        response = self._session.get(url, headers=self.headers)
         tables = response.json()["tables"]
         for table in tables:
             yield {"id": table["id"]}
@@ -247,7 +265,7 @@ class GristAPI(Adapter):
         """
         url = f"{self.server}/api/orgs/{self.org_id}/workspaces"
 
-        response = requests.get(url, headers=self.headers)
+        response = self._session.get(url, headers=self.headers)
         workspaces = response.json()
         for workspace in workspaces:
             for doc in workspace["docs"]:
@@ -272,12 +290,13 @@ class GristAPI(Adapter):
         self,
         bounds: Dict[str, Filter],
         order: List[Tuple[str, RequestedOrder]],
+        limit: Optional[int] = None,
         **kwargs,
     ) -> Iterator[Row]:
         if self.doc_id:
             if self.table_id:
                 logger.debug(f"get_rows fetch_table {self.doc_id=} {self.table_id}")
-                return self.fetch_table(bounds, order, **kwargs)
+                return self.fetch_table(bounds, order, limit, **kwargs)
             else:
                 logger.debug(f"get_rows fetch_table_ids {self.doc_id=}")
                 return self.fetch_table_ids(bounds, order, **kwargs)
