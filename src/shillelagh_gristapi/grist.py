@@ -230,7 +230,8 @@ class GristAPI(Adapter):
                 elif isinstance(self.columns[k], DateTime) and v is not None:
                     v = datetime.fromtimestamp(int(v))
                 elif isinstance(v, list):
-                    v = ",".join([str(item) for item in v])
+                    # First is element is "L" indicating a list
+                    v = ",".join([str(item) for item in v[1:]])
                 f[k] = v
             yield f
 
