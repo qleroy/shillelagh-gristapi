@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shillelagh-gristapi"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = ["requests >=2.31.0", "shillelagh >=1.2.6"]
 authors = [{ name = "Quentin Leroy", email = "quentin.n.leroy@gmail.com" }]
 description = "Shillelagh adapter for querying Grist Documents."
