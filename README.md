@@ -68,7 +68,7 @@ query_tables = "SELECT * FROM 'grist://<replace-with-a-doc-id>';"
 cursor.execute(query_tables).fetchall()
 
 # Fetch records
-# https://support.getgrist.com/api/#tag/tables/operation/listTables
+# https://support.getgrist.com/api/#tag/records
 query = "SELECT * FROM 'grist://<replace-with-a-doc-id>/<replace-with-a-table-id>';"
 cursor.execute(query).fetchall()
 ```
