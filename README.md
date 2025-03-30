@@ -11,11 +11,15 @@ gristapi:
   api_key: <replace-with-your-key>
   server: <replace-with-your-server>
   org_id: <replace-with-your-org-id>
+  expire_after: <replace-with-cache-timeout-in-seconds>
+  cache_name: <replace-with-cache-name-in-filesystem>
 ```
 
 - find your api_key in your profile settings,
 - set server to your server url, e.g. `https://templates.getgrist.com`,
-- find your org_id with the [`orgs` endpoint](https://support.getgrist.com/api/#tag/orgs/operation/listOrgs), e.g. `curl -H "Authorization: Bearer <replace-with-your-apy-key> "<replace-with-your-server>/api/orgs/" | jq '.[]|.id'`.
+- find your org_id with the [`orgs` endpoint](https://support.getgrist.com/api/#tag/orgs/operation/listOrgs), e.g. `curl -H "Authorization: Bearer <replace-with-your-apy-key> "<replace-with-your-server>/api/orgs/" | jq '.[]|.id'`,
+- default cache timeout is 0,
+- default cache name is grist_cache.
 
 ```bash
 $ shillelagh
@@ -46,6 +50,8 @@ connection = connect(
             "api_key": os.environ["GRIST_API_KEY"],
             "server": os.environ["GRIST_SERVER"],
             "org_id": os.environ["GRIST_ORG_ID"],
+            "expire_after": os.environ["CACHE_SEC"],
+            "cache_name": os.environ["CACHE_NAME"],
         }
     },
 )
@@ -95,7 +101,9 @@ Engine parameters
           "gristapi":{
             "api_key": "<REPLACE_WITH_YOUR_API_KEY>",
             "server": "<REPLACE_WITH_YOUR_SERVER_URL>",
-            "org_id": "<REPLACE_WITH_YOUR_ORD_ID>"
+            "org_id": "<REPLACE_WITH_YOUR_ORD_ID>",
+            "expire_after": 3600,
+            "cache_name": "grist_name"
           }
         }
     }
