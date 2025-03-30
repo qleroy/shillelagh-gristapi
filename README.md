@@ -18,6 +18,7 @@ gristapi:
 - find your org_id with the [`orgs` endpoint](https://support.getgrist.com/api/#tag/orgs/operation/listOrgs), e.g. `curl -H "Authorization: Bearer <replace-with-your-apy-key> "<replace-with-your-server>/api/orgs/" | jq '.[]|.id'`.
 
 ```bash
+$ shillelagh
 # List document ids
 # https://support.getgrist.com/api/#tag/workspaces/operation/listWorkspaces
 SELECT * FROM 'grist://';
@@ -27,7 +28,7 @@ SELECT * FROM 'grist://';
 SELECT * FROM 'grist://<replace-with-a-doc-id>';
 
 # Fetch records
-# https://support.getgrist.com/api/#tag/tables/operation/listTables
+# https://support.getgrist.com/api/#tag/records
 SELECT * FROM 'grist://<replace-with-a-doc-id>/<replace-with-a-table-id>';
 ```
 
