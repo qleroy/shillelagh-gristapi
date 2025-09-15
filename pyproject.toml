@@ -1,29 +1,50 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "shillelagh-gristapi"
-version = "0.0.10"
-dependencies = ["requests >=2.31.0", "shillelagh >=1.2.6"]
-authors = [{ name = "Quentin Leroy", email = "quentin.n.leroy@gmail.com" }]
-description = "Shillelagh adapter for querying Grist Documents."
+version = "0.1.0"
+description = "Shillelagh adapter to query Grist documents and tables via SQL."
 readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Quentin Leroy" }]
 requires-python = ">=3.8"
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-]
+dependencies = ["shillelagh>=1.4.0", "requests>=2.32.0,<3"]
+
+keywords = ["shillelagh", "grist", "sql", "adapter", "superset"]
 
 [project.urls]
 Homepage = "https://github.com/qleroy/shillelagh-gristapi"
 Issues = "https://github.com/qleroy/shillelagh-gristapi/issues"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["shillelagh_gristapi*"]
-namespaces = false
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "responses>=0.25.0",
+    "ruff>=0.6.9",
+    "mypy>=1.11.2",
+    "types-requests",
+    "build",
+]
+
+[tool.setuptools.package-dir]
+"" = "src"
 
 [project.entry-points."shillelagh.adapter"]
 gristapi = "shillelagh_gristapi.grist:GristAPI"
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+select = ["E", "F", "W", "I"]
+fix = true
+
+[tool.mypy]
+python_version = "3.8"
+warn_unused_configs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+check_untyped_defs = true
+strict_optional = true
