@@ -48,3 +48,7 @@ disallow_untyped_defs = true
 no_implicit_optional = true
 check_untyped_defs = true
 strict_optional = true
+
+[tool.pytest.ini_options]
+addopts = "-q --cov=shillelagh-gristapi --cov-report=term-missing"
+testpaths = ["tests"]
