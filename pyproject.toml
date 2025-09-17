@@ -29,11 +29,14 @@ dev = [
     "build",
 ]
 
-[tool.setuptools.package-dir]
-"" = "src"
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [project.entry-points."shillelagh.adapter"]
-gristapi = "shillelagh_gristapi.grist:GristAPI"
+gristapi = "shillelagh_gristapi.adapter:GristAPIAdapter"
 
 [tool.ruff]
 line-length = 100
