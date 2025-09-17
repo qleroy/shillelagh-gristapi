@@ -209,7 +209,7 @@ class GristClient:
         workspaces = self.list_workspaces(org_id, timeout=timeout)
         docs = []
         for ws in workspaces:
-            if ws_id is not None and ws["id"] != ws_id:
+            if ws_id is not None and int(ws_id) != ws.get("id"):
                 continue
             for doc in ws.get("docs", []) or []:
                 docs.append(

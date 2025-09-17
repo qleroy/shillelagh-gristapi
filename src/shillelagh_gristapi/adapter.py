@@ -54,6 +54,7 @@ GRIST_PREFIX = "grist://"
 SPECIAL_ORGS = "__orgs__"
 SPECIAL_COLUMNS = "__columns__"
 SPECIAL_WORKSPACES = "__workspaces__"
+SPECIAL_DOCS = "__docs__"
 logger = logging.getLogger(__name__)
 
 
@@ -79,6 +80,7 @@ class _State:
     is_orgs: bool = False
     is_columns: bool = False
     is_workspaces: bool = False
+    is_docs: bool = False
 
 
 # ---------------------------
@@ -154,9 +156,9 @@ class GristAPIAdapter(Adapter):
             )
         if isinstance(api_key, list):
             api_key = api_key[0]
-        workspace_id = qs.get("workspace_id") or gk.get("workspace_id", None)
-        if isinstance(workspace_id, list):
-            workspace_id = workspace_id[0]
+        # workspace_id = qs.get("workspace_id") or gk.get("workspace_id", None)
+        # if isinstance(workspace_id, list):
+        # workspace_id = workspace_id[0]
 
         if "enabled" in qs:
             enabled_str = qs["enabled"][0]  # get first value from query string
@@ -226,6 +228,8 @@ class GristAPIAdapter(Adapter):
             path=full_path,
         )
 
+        workspace_id = doc_id if table_id == SPECIAL_DOCS else None
+
         # Store state and bootstrap an HTTP client.
         self.state = _State(
             server=server,
@@ -236,7 +240,9 @@ class GristAPIAdapter(Adapter):
             workspace_id=workspace_id,
             is_orgs=doc_id == SPECIAL_ORGS,
             is_columns=part2 == SPECIAL_COLUMNS,
-            is_workspaces=table_id == SPECIAL_WORKSPACES,
+            is_workspaces=doc_id == SPECIAL_WORKSPACES
+            or table_id == SPECIAL_WORKSPACES,
+            is_docs=doc_id in [None, SPECIAL_DOCS] or table_id == SPECIAL_DOCS,
         )
         self.client = GristClient(
             ClientConfig(server=server, api_key=api_key, cache=cache_config)
@@ -273,9 +279,17 @@ class GristAPIAdapter(Adapter):
             return None, None, None, qs
         elif netloc == SPECIAL_ORGS:
             return SPECIAL_ORGS, None, None, qs
+        elif netloc == SPECIAL_WORKSPACES:
+            return SPECIAL_WORKSPACES, None, None, qs
+        elif netloc == SPECIAL_DOCS:
+            return SPECIAL_DOCS, None, None, qs
         else:
             doc_id = netloc
-            if part1 and part2 == SPECIAL_COLUMNS:
+            if part1 == SPECIAL_WORKSPACES:
+                return doc_id, SPECIAL_WORKSPACES, None, qs
+            if part1 == SPECIAL_DOCS:
+                return doc_id, SPECIAL_DOCS, None, qs
+            elif part1 and part2 == SPECIAL_COLUMNS:
                 doc_id, table_id = netloc, part1
                 return doc_id, table_id, part2, qs
             else:
@@ -315,7 +329,7 @@ class GristAPIAdapter(Adapter):
             return {"id": String(), "name": String()}
 
         # root: list docs
-        if self.state.doc_id is None:
+        if self.state.is_docs:
             return {"id": String(), "name": String()}
 
         # synthetic: columns for a doc
@@ -462,7 +476,7 @@ class GristAPIAdapter(Adapter):
             return
 
         # 02) Docs listing — needs org_id (and optional workspace_id)
-        if self.state.doc_id is None:
+        if self.state.is_docs:
             if self.state.org_id is None:
                 raise ProgrammingError(
                     "org_id is required in adapter_kwargs['gristapi'] to list docs"
