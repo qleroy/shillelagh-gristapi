@@ -109,7 +109,7 @@ class GristAPIAdapter(Adapter):
         part2,
         qs,
         grist_cfg: Dict[str, Any],
-        cache_cfg: Dict[str, Any],
+        cache_cfg: Optional[Dict[str, Any]] = None,
         cachepath: Optional[str] = None,
     ) -> None:
         """
@@ -133,7 +133,7 @@ class GristAPIAdapter(Adapter):
           - cachepath (directory for sqlite file; default ~/.cache/gristapi/)
         """
         gk = grist_cfg
-        ck = cache_cfg
+        ck = cache_cfg or {}
 
         server = qs.get("server") or gk.get("server")
         if not server:
@@ -241,8 +241,6 @@ class GristAPIAdapter(Adapter):
         self.client = GristClient(
             ClientConfig(server=server, api_key=api_key, cache=cache_config)
         )
-
-        print(cache_config)
 
         # Cache of discovered columns for table rows (lazy-loaded).
         self._columns: Optional[Dict[str, Field]] = None
