@@ -42,8 +42,8 @@ import urllib
 
 from shillelagh.adapters.base import Adapter
 from shillelagh.exceptions import ProgrammingError
-from shillelagh.fields import Field, String, Integer, Date, DateTime
-from shillelagh.filters import Equal, Range
+from shillelagh.fields import Field, String, Integer, DateTime, Boolean, Float
+from shillelagh.filters import Equal
 from shillelagh.typing import RequestedOrder
 
 from .http import ClientConfig, GristClient, CacheConfig
@@ -84,6 +84,25 @@ class _State:
 
 
 # ---------------------------
+# Backwards compatibility
+# ---------------------------
+def assert_params(
+    grist_cfg: Optional[Dict[str, Any]] = None,
+    server: Optional[str] = None,
+    org_id: Optional[int] = None,
+    api_key: Optional[str] = None,
+):
+    if grist_cfg is not None:
+        pass
+    elif server and org_id and api_key:
+        pass
+    else:
+        raise ValueError(
+            "You must either provide grist_cfg or server + org_id + api_key."
+        )
+
+
+# ---------------------------
 # Adapter
 # ---------------------------
 
@@ -110,7 +129,10 @@ class GristAPIAdapter(Adapter):
         table_id,
         part2,
         qs,
-        grist_cfg: Dict[str, Any],
+        grist_cfg: Optional[Dict[str, Any]] = None,
+        server: Optional[str] = None,
+        org_id: Optional[int] = None,
+        api_key: Optional[str] = None,
         cache_cfg: Optional[Dict[str, Any]] = None,
         cachepath: Optional[str] = None,
     ) -> None:
@@ -127,13 +149,23 @@ class GristAPIAdapter(Adapter):
         Optional:
           - workspace_id (for listing docs)
           - enabled (default True = caching enabled)
-          - metadata_ttl (default 0 = no caching)
-          - records_ttl (default 0 = no caching)
+          - metadata_ttl (default 300 = 5min, 0 = disabled)
+          - records_ttl (default 60 = 1min; 0 = disabled)
           - maxsize (default 1024)
           - backend (default "memory", or "sqlite" for on-disk persistence)
           - filename (for sqlite backend; default "gristapi_cache.sqlite")
           - cachepath (directory for sqlite file; default ~/.cache/gristapi/)
         """
+
+        assert_params(
+            grist_cfg=grist_cfg, server=server, org_id=org_id, api_key=api_key
+        )
+        if grist_cfg is None:
+            grist_cfg = dict(
+                server=server,
+                org_id=org_id,
+                api_key=api_key,
+            )
         gk = grist_cfg
         ck = cache_cfg or {}
 
@@ -322,23 +354,70 @@ class GristAPIAdapter(Adapter):
         """
         # synthetic: orgs
         if self.state.is_orgs:
-            return {"id": String(), "name": String()}
+            return {
+                "id": String(),
+                "name": String(),
+                "createdAt": DateTime(),
+                "updatedAt": DateTime(),
+                "domain": String(),
+                "access": String(),
+            }
 
         # synthetic: workspaces
         if self.state.is_workspaces:
-            return {"id": String(), "name": String()}
+            return {
+                "id": String(),
+                "name": String(),
+                "createdAt": DateTime(),
+                "updatedAt": DateTime(),
+                "orgDomain": String(),
+                "access": String(),
+            }
 
         # root: list docs
         if self.state.is_docs:
-            return {"id": String(), "name": String()}
+            return {
+                "id": String(),
+                "name": String(),
+                "createdAt": DateTime(),
+                "updatedAt": DateTime(),
+                "workspaceId": String(),
+                "workspaceName": String(),
+                "workspaceAccess": String(),
+                "orgDomain": String(),
+            }
 
         # synthetic: columns for a doc
         if self.state.is_columns:
-            return {"name": String(), "type": String()}
+            return {
+                "id": String(),
+                "type": String(),
+                "colRef": Integer(),
+                "parentId": Integer(),
+                "parentPos": Float(),
+                "isFormula": Boolean(),
+                "formula": String(),
+                "label": String(),
+                "description": String(),
+                "untieColIdFromLabel": Boolean(),
+                "summarySourceCol": Integer(),
+                "displayCol": Integer(),
+                "visibleCol": Boolean(),
+                "reverseCol": Integer(),
+                "recalcWhen": Integer(),
+            }
 
         # list tables in a doc
         if not self.state.table_id:
-            return {"id": String(), "name": String()}
+            return {
+                "id": String(),
+                "primaryViewId": Integer(),
+                "summarySourceTable": Integer(),
+                "onDemand": Boolean(),
+                "rawViewSectionRef": Integer(),
+                "recordCardViewSectionRef": Integer(),
+                "tableRef": Integer(),
+            }
 
         # Rows of a specific table: discover columns via list_columns
         if self._columns is None:
@@ -465,14 +544,44 @@ class GristAPIAdapter(Adapter):
         if self.state.is_orgs:
             orgs = self.client.list_orgs()
             for org in orgs:
-                yield {"id": org.get("id"), "name": org.get("name")}
+                if createdAt := org.get("createdAt"):
+                    createdAt = datetime.datetime.strptime(
+                        createdAt, "%Y-%m-%dT%H:%M:%S.%fZ"
+                    )
+                if updatedAt := org.get("updatedAt"):
+                    updatedAt = datetime.datetime.strptime(
+                        updatedAt, "%Y-%m-%dT%H:%M:%S.%fZ"
+                    )
+                yield {
+                    "id": org.get("id"),
+                    "name": org.get("name"),
+                    "createdAt": createdAt,
+                    "updatedAt": updatedAt,
+                    "domain": org.get("domain"),
+                    "access": org.get("access"),
+                }
             return
 
         # 02) synthetic workspaces
         if self.state.is_workspaces:
             workspaces = self.client.list_workspaces(self.state.org_id)
             for ws in workspaces:
-                yield {"id": ws.get("id"), "name": ws.get("name")}
+                if createdAt := ws.get("createdAt"):
+                    createdAt = datetime.datetime.strptime(
+                        createdAt, "%Y-%m-%dT%H:%M:%S.%fZ"
+                    )
+                if updatedAt := ws.get("updatedAt"):
+                    updatedAt = datetime.datetime.strptime(
+                        updatedAt, "%Y-%m-%dT%H:%M:%S.%fZ"
+                    )
+                yield {
+                    "id": ws.get("id"),
+                    "name": ws.get("name"),
+                    "createdAt": createdAt,
+                    "updatedAt": updatedAt,
+                    "orgDomain": ws.get("orgDomain"),
+                    "access": ws.get("access"),
+                }
             return
 
         # 02) Docs listing — needs org_id (and optional workspace_id)
@@ -483,7 +592,26 @@ class GristAPIAdapter(Adapter):
                 )
             for d in self.client.list_docs(self.state.org_id, self.state.workspace_id):
                 # your client yields flattened doc metadata
-                yield {"id": d.get("doc_id"), "name": d.get("doc_name")}
+                if createdAt := d.get("doc_created_at"):
+                    createdAt = datetime.datetime.strptime(
+                        createdAt, "%Y-%m-%dT%H:%M:%S.%fZ"
+                    )
+                if updatedAt := d.get("doc_updated_at"):
+                    updatedAt = datetime.datetime.strptime(
+                        updatedAt, "%Y-%m-%dT%H:%M:%S.%fZ"
+                    )
+                # if isinstance(self._columns[k], DateTime) and v is not None:
+                # v = datetime.datetime.fromtimestamp(int(v))
+                yield {
+                    "id": d.get("doc_id"),
+                    "name": d.get("doc_name"),
+                    "createdAt": createdAt,
+                    "updatedAt": updatedAt,
+                    "workspaceId": d.get("workspace_id"),
+                    "workspaceName": d.get("workspace_name"),
+                    "workspaceAccess": d.get("workspace_access"),
+                    "orgDomain": d.get("org_domain"),
+                }
             return
 
         # 03) synthetic columns for a doc
@@ -491,8 +619,21 @@ class GristAPIAdapter(Adapter):
             columns = self.client.list_columns(self.state.doc_id, self.state.table_id)  # type: ignore[arg-type]
             for col in columns:
                 yield {
-                    "name": col["fields"].get("label"),
+                    "id": col.get("id"),
                     "type": col["fields"].get("type"),
+                    "colRef": col["fields"].get("colRef"),
+                    "parentId": col["fields"].get("parentId"),
+                    "parentPos": col["fields"].get("parentPos"),
+                    "isFormula": col["fields"].get("isFormula"),
+                    "formula": col["fields"].get("formula"),
+                    "label": col["fields"].get("label"),
+                    "description": col["fields"].get("description"),
+                    "untieColIdFromLabel": col["fields"].get("untieColIdFromLabel"),
+                    "summarySourceCol": col["fields"].get("summarySourceCol"),
+                    "displayCol": col["fields"].get("displayCol"),
+                    "visibleCol": col["fields"].get("visibleCol"),
+                    "reverseCol": col["fields"].get("reverseCol"),
+                    "recalcWhen": col["fields"].get("recalcWhen"),
                 }
             return
 
@@ -500,7 +641,17 @@ class GristAPIAdapter(Adapter):
         if not self.state.table_id:
             tables = self.client.list_tables(self.state.doc_id)  # type: ignore[arg-type]
             for t in tables:
-                yield {"id": t.get("id"), "name": t.get("name")}
+                yield {
+                    "id": t.get("id"),
+                    "primaryViewId": t["fields"].get("primaryViewId"),
+                    "summarySourceTable": t["fields"].get("summarySourceTable"),
+                    "onDemand": t["fields"].get("onDemand"),
+                    "rawViewSectionRef": t["fields"].get("rawViewSectionRef"),
+                    "recordCardViewSectionRef": t["fields"].get(
+                        "recordCardViewSectionRef"
+                    ),
+                    "tableRef": t["fields"].get("tableRef"),
+                }
             return
 
         # 3) Table rows via /records only
@@ -514,9 +665,7 @@ class GristAPIAdapter(Adapter):
         # Stream rows directly from /records; we rely on the server for filtering/sorting/limit.
         for row in self.client.iter_records(self.state.doc_id, table_id, params=params):  # type: ignore[arg-type]
             for k, v in row.items():
-                if isinstance(self._columns[k], Date) and v is not None:
-                    v = datetime.datetime.fromtimestamp(int(v))
-                elif isinstance(self._columns[k], DateTime) and v is not None:
+                if isinstance(self._columns[k], DateTime) and v is not None:
                     v = datetime.datetime.fromtimestamp(int(v))
                 elif isinstance(v, list):
                     # First is element is "L" indicating a list

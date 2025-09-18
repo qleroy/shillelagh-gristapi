@@ -1,3 +1,4 @@
+import datetime
 import os
 import json
 import time
@@ -225,6 +226,9 @@ class SQLiteCache:
         key_text = _key_to_text(key)
         now = time.time()
         expires_at = now + ttl
+        print(
+            f"SET {key_text} expires at {expires_at} {datetime.datetime.fromtimestamp(expires_at) }"
+        )
         try:
             value_json = json.dumps(value, ensure_ascii=False)
         except TypeError:
