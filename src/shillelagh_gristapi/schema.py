@@ -22,7 +22,7 @@ def map_grist_type(grist_type: str) -> Field:
     if t == "bool":
         return Boolean(order=Order.ANY, filters=[Equal])
     if t == "date":
-        return Date(order=Order.ANY, filters=[Equal])
+        return DateTime(order=Order.ANY, filters=[Equal])
     if t.startswith("datetime:"):
         return DateTime(order=Order.ANY, filters=[Equal])
     if t == "choice":

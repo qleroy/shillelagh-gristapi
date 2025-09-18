@@ -21,7 +21,7 @@ DEFAULT_USER_AGENT = "shillelagh-gristapi/dev"
 class CacheConfig:
     enabled: bool = True
     metadata_ttl: int = 300  # seconds for orgs/workspaces/tables/columns
-    records_ttl: int = 0  # seconds for /records (0 = disabled)
+    records_ttl: int = 60  # seconds for /records (0 = disabled)
     maxsize: int = 1024  # max distinct cached entries
     backend: str = "memory"  # "memory" or "sqlite"
     path: Optional[str] = None  # required if backend == "sqlite"
