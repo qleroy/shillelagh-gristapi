@@ -156,7 +156,6 @@ class GristAPIAdapter(Adapter):
           - filename (for sqlite backend; default "gristapi_cache.sqlite")
           - cachepath (directory for sqlite file; default ~/.cache/gristapi/)
         """
-
         assert_params(
             grist_cfg=grist_cfg, server=server, org_id=org_id, api_key=api_key
         )
@@ -201,12 +200,12 @@ class GristAPIAdapter(Adapter):
         if metadata_ttl := qs.get("metadata_ttl"):
             metadata_ttl = int(metadata_ttl[0])
         else:
-            metadata_ttl = int(ck.get("metadata_ttl", 0))
+            metadata_ttl = int(ck.get("metadata_ttl", 300))
 
         if records_ttl := qs.get("records_ttl"):
             records_ttl = int(records_ttl[0])
         else:
-            records_ttl = int(ck.get("records_ttl", 0))
+            records_ttl = int(ck.get("records_ttl", 60))
 
         if maxsize := qs.get("maxsize"):
             maxsize = int(maxsize[0])
@@ -216,15 +215,15 @@ class GristAPIAdapter(Adapter):
         if backend := qs.get("backend"):
             backend = backend[0]
         else:
-            backend = ck.get("backend", "memory")
+            backend = ck.get("backend", "sqlite")
 
         if filename := qs.get("filename"):
             filename = filename[0]
         else:
-            filename = ck.get("filename", None)
+            filename = ck.get("filename", "cache.sqlite")
 
         if not cachepath:
-            cachepath = os.path.expanduser("~/.cache/gristapi/")
+            cachepath = os.path.expanduser(".")
 
         # ensure directory exists, handle errors
         try:
