@@ -75,7 +75,6 @@ class _State:
     api_key: str
     doc_id: Optional[str]
     workspace_id: Optional[str]
-    # table_id may initially be a *name* if given as such; we resolve it to the true id and cache.
     table_id: Optional[str]
     is_orgs: bool = False
     is_columns: bool = False
@@ -348,8 +347,7 @@ class GristAPIAdapter(Adapter):
           - tables list: {"id": String(), "name": String()}
 
         For a specific table, we fetch the table schema once and map official
-        Grist types to shillelagh fields using `map_grist_type`. If the table
-        was referenced by *name*, we resolve and cache the actual table ID.
+        Grist types to shillelagh fields using `map_grist_type`.
         """
         # synthetic: orgs
         if self.state.is_orgs:
@@ -420,8 +418,7 @@ class GristAPIAdapter(Adapter):
 
         # Rows of a specific table: discover columns via list_columns
         if self._columns is None:
-            # First, if table was given by *name*, resolve to the actual id by scanning tables.
-            table_id = self._resolve_table_id()
+            table_id = self.state.table_id
 
             # Fetch column metadata
             columns = self.client.list_columns(self.state.doc_id, table_id)  # type: ignore[arg-type]
@@ -441,35 +438,6 @@ class GristAPIAdapter(Adapter):
             self._columns["id"] = Integer()
 
         return self._columns
-
-    def _resolve_table_id(self) -> str:
-        """
-        Resolve table_id if a *name* was provided; cache the canonical id.
-        Returns the canonical table id string to use with API calls.
-        """
-        if self._resolved_table_id:
-            return self._resolved_table_id
-        if self.state.doc_id is None or self.state.table_id is None:
-            raise ProgrammingError(
-                "Table resolution requested without doc/table in URI"
-            )
-
-        requested = self.state.table_id
-        # Scan tables in the doc
-        tables = self.client.list_tables(self.state.doc_id)  # type: ignore[arg-type]
-        # tables is a list from your client
-        for t in tables:
-            tid = t.get("id")
-            tname = t.get("name")
-            if requested == tid or requested == tname:
-                self._resolved_table_id = tid
-                self.state.table_id = tid
-                return tid
-
-        # Not found
-        raise ProgrammingError(
-            f"Grist table not found in doc '{self.state.doc_id}': {requested!r}"
-        )
 
     @staticmethod
     def _order_to_sort_string(order: List[Tuple[str, RequestedOrder]]) -> Optional[str]:
@@ -654,8 +622,7 @@ class GristAPIAdapter(Adapter):
             return
 
         # 3) Table rows via /records only
-        # ensure we have resolved the canonical table id and discovered columns
-        table_id = self._resolve_table_id()
+        table_id = self.state.table_id
         _ = self.get_columns()  # warm the schema cache
 
         params = self._build_records_params(bounds, order, limit)
