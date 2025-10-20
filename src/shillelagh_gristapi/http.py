@@ -259,6 +259,7 @@ class GristClient:
         self,
         doc_id: str,
         table_id: str,
+        hidden: bool = True,
         *,
         timeout: Optional[float] = None,
     ) -> Iterable[Dict[str, Any]]:
@@ -278,8 +279,13 @@ class GristClient:
         if cached is not None:
             return cached
 
+        q = dict()
+        if hidden:
+            q["hidden"] = "true"
+        else:
+            q["hidden"] = "false"
         url = self._url(f"/api/docs/{doc_id}/tables/{table_id}/columns")
-        response = self.session.get(url, timeout=timeout)
+        response = self.session.get(url, params=q, timeout=timeout)
         response.raise_for_status()
         data = response.json()["columns"]
         self._cache_set(key, data, self.cfg.cache.metadata_ttl)
@@ -289,6 +295,7 @@ class GristClient:
         self,
         doc_id: str,
         table_id: str,
+        hidden: bool = True,
         *,
         params: Optional[Mapping[str, Any]] = None,
         include_id: bool = True,
@@ -346,6 +353,10 @@ class GristClient:
                 yield dict(row)
             return
 
+        if hidden:
+            q["hidden"] = "true"
+        else:
+            q["hidden"] = "false"
         url = self._url(f"/api/docs/{doc_id}/tables/{table_id}/records")
         response = self.session.get(url, params=q, timeout=timeout)
         response.raise_for_status()

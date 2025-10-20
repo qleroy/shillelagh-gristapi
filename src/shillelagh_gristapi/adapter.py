@@ -48,6 +48,8 @@ from shillelagh.typing import RequestedOrder
 
 from .http import ClientConfig, GristClient, CacheConfig
 from .schema import map_grist_type
+from .schema import Reference
+from .schema import GristHelperDisplayCol
 
 
 GRIST_PREFIX = "grist://"
@@ -423,11 +425,14 @@ class GristAPIAdapter(Adapter):
             # Fetch column metadata
             columns = self.client.list_columns(self.state.doc_id, table_id)  # type: ignore[arg-type]
             cols: Dict[str, Field] = {}
+            displayCols: Dict[str, int] = {}
+            colRefs: Dict[str, int] = {}
             for col in columns:
-                col = col
                 cid = col.get("id")
                 ctype = col["fields"].get("type")
                 cols[str(cid)] = map_grist_type(str(ctype))
+                displayCols[str(cid)] = col["fields"].get("displayCol", 0)
+                colRefs[str(cid)] = col["fields"].get("colRef", 0)
 
             if not cols:
                 raise ProgrammingError(
@@ -435,6 +440,8 @@ class GristAPIAdapter(Adapter):
                 )
 
             self._columns = cols
+            self._displayCols = displayCols
+            self._colRefs = colRefs
             self._columns["id"] = Integer()
 
         return self._columns
@@ -497,6 +504,36 @@ class GristAPIAdapter(Adapter):
     # data
     # -----------
 
+    def _row_to_python(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Convertit une ligne brute renvoyée par l’API Grist
+        en valeurs Python natives selon self._columns.
+        """
+        parsed = {}
+
+        for col, field in self._columns.items():
+            if isinstance(field, GristHelperDisplayCol):
+                continue
+            raw_value = row.get(col)
+
+            if isinstance(field, DateTime) and raw_value is not None:
+                try:
+                    raw_value = datetime.datetime.fromtimestamp(int(raw_value))
+                except (ValueError, TypeError):
+                    raw_value = None
+            elif isinstance(raw_value, list):
+                raw_value = ",".join([str(item) for item in raw_value[1:]])
+            elif isinstance(field, Reference):
+                displayCol = self._displayCols.get(col)
+                colRef = self._colRefs.get(col)
+                for colName, colRef in self._colRefs.items():
+                    if colRef == displayCol:
+                        raw_value = row.get(colName)
+
+            parsed[col] = field.parse(raw_value) if raw_value is not None else None
+
+        return parsed
+
     def get_rows(
         self,
         bounds: Dict[str, Any],
@@ -504,8 +541,8 @@ class GristAPIAdapter(Adapter):
         limit: Optional[int] = None,
         **kwargs: Any,
     ) -> Iterator[Dict[str, Any]]:
-        # logger.debug("Bounds:", bounds)
-        # logger.debug("Order:", order)
+        logger.debug("Bounds:", bounds)
+        logger.debug("Order:", order)
 
         # 01) synthetic orgs
         if self.state.is_orgs:
@@ -626,18 +663,8 @@ class GristAPIAdapter(Adapter):
         _ = self.get_columns()  # warm the schema cache
 
         params = self._build_records_params(bounds, order, limit)
-        # logger.debug("Params:", params)
+        logger.debug("Params:", params)
 
         # Stream rows directly from /records; we rely on the server for filtering/sorting/limit.
         for row in self.client.iter_records(self.state.doc_id, table_id, params=params):  # type: ignore[arg-type]
-            for k, v in row.items():
-                if isinstance(self._columns[k], DateTime) and v is not None:
-                    try:
-                        v = datetime.datetime.fromtimestamp(int(v))
-                    except ValueError:
-                        v = None
-                elif isinstance(v, list):
-                    # First element is "L" indicating a list
-                    v = ",".join([str(item) for item in v[1:]])
-                row[k] = v
-            yield dict(row)
+            yield self._row_to_python(row)

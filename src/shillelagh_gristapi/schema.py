@@ -1,6 +1,18 @@
-from shillelagh.fields import Boolean, Date, DateTime, Float, Integer, String
+from typing import Optional
+
+from shillelagh.fields import Boolean, DateTime, Float, Integer, String
 from shillelagh.fields import Field, Order
-from shillelagh.filters import Filter, Equal
+from shillelagh.filters import Equal
+
+
+class Reference(Field[str, str]):
+    type = "TEXT"
+    db_api_type = "TEXT"
+
+
+class GristHelperDisplayCol(Field[str, str]):
+    type = "TEXT"
+    db_api_type = "TEXT"
 
 
 def map_grist_type(grist_type: str) -> Field:
@@ -33,12 +45,15 @@ def map_grist_type(grist_type: str) -> Field:
         return String(order=Order.ANY, filters=[Equal])
     if t.startswith("ref:"):
         # pointing to another table → JSON might represent e.g. an ID, or structured
-        return String(order=Order.ANY, filters=[Equal])
+        # return String(order=Order.ANY, filters=[Equal])
+        return Reference()
     if t.startswith("reflist:"):
         return String(order=Order.ANY, filters=[Equal])
     if t == "attachments":
         # attachments are files/images → JSON (maybe with URLs/metadata)
         return String(order=Order.ANY, filters=[Equal])
+    if t.startswith("gristHelper_Display"):
+        return GristHelperDisplayCol()
 
     # Safe fallback
     return String()
