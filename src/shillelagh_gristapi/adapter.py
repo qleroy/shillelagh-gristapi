@@ -632,9 +632,12 @@ class GristAPIAdapter(Adapter):
         for row in self.client.iter_records(self.state.doc_id, table_id, params=params):  # type: ignore[arg-type]
             for k, v in row.items():
                 if isinstance(self._columns[k], DateTime) and v is not None:
-                    v = datetime.datetime.fromtimestamp(int(v))
+                    try:
+                        v = datetime.datetime.fromtimestamp(int(v))
+                    except ValueError:
+                        v = None
                 elif isinstance(v, list):
-                    # First is element is "L" indicating a list
+                    # First element is "L" indicating a list
                     v = ",".join([str(item) for item in v[1:]])
                 row[k] = v
             yield dict(row)
