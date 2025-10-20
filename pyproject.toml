@@ -9,7 +9,7 @@ description = "Shillelagh adapter to query Grist documents and tables via SQL."
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Quentin Leroy" }]
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = ["shillelagh>=1.4.0", "requests>=2.32.0,<3"]
 
 keywords = ["shillelagh", "grist", "sql", "adapter", "superset"]
