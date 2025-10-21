@@ -49,6 +49,7 @@ from shillelagh.typing import RequestedOrder
 from .http import ClientConfig, GristClient, CacheConfig
 from .schema import map_grist_type
 from .schema import Reference
+from .schema import ReferenceList
 from .schema import GristHelperDisplayCol
 
 
@@ -426,13 +427,24 @@ class GristAPIAdapter(Adapter):
             columns = self.client.list_columns(self.state.doc_id, table_id)  # type: ignore[arg-type]
             cols: Dict[str, Field] = {}
             displayCols: Dict[str, int] = {}
-            colRefs: Dict[str, int] = {}
             for col in columns:
                 cid = col.get("id")
                 ctype = col["fields"].get("type")
-                cols[str(cid)] = map_grist_type(str(ctype))
+                grist_type = map_grist_type(str(ctype), colId=str(cid))
+                if grist_type == GristHelperDisplayCol():
+                    continue
+                cols[str(cid)] = grist_type
                 displayCols[str(cid)] = col["fields"].get("displayCol", 0)
-                colRefs[str(cid)] = col["fields"].get("colRef", 0)
+
+            field_to_displayed_col_id: Dict[str, str] = {}
+            for col in columns:
+                displayCol = col["fields"].get("displayCol", 0)
+                if displayCol:
+                    for col2 in columns:
+                        colRef = col2["fields"].get("colRef", 0)
+                        if colRef == displayCol:
+                            field_to_displayed_col_id[col["id"]] = col2["id"]
+                            break
 
             if not cols:
                 raise ProgrammingError(
@@ -440,8 +452,7 @@ class GristAPIAdapter(Adapter):
                 )
 
             self._columns = cols
-            self._displayCols = displayCols
-            self._colRefs = colRefs
+            self._field_to_displayed_col_id = field_to_displayed_col_id
             self._columns["id"] = Integer()
 
         return self._columns
@@ -512,8 +523,6 @@ class GristAPIAdapter(Adapter):
         parsed = {}
 
         for col, field in self._columns.items():
-            if isinstance(field, GristHelperDisplayCol):
-                continue
             raw_value = row.get(col)
 
             if isinstance(field, DateTime) and raw_value is not None:
@@ -521,14 +530,15 @@ class GristAPIAdapter(Adapter):
                     raw_value = datetime.datetime.fromtimestamp(int(raw_value))
                 except (ValueError, TypeError):
                     raw_value = None
+            elif isinstance(field, Reference):
+                displayedColId = self._field_to_displayed_col_id.get(col)
+                raw_value = row.get(displayedColId)
+            elif isinstance(field, ReferenceList):
+                displayedColId = self._field_to_displayed_col_id.get(col)
+                displayedColValue = row.get(displayedColId)
+                raw_value = ",".join(displayedColValue[1:])
             elif isinstance(raw_value, list):
                 raw_value = ",".join([str(item) for item in raw_value[1:]])
-            elif isinstance(field, Reference):
-                displayCol = self._displayCols.get(col)
-                colRef = self._colRefs.get(col)
-                for colName, colRef in self._colRefs.items():
-                    if colRef == displayCol:
-                        raw_value = row.get(colName)
 
             parsed[col] = field.parse(raw_value) if raw_value is not None else None
 
@@ -541,8 +551,8 @@ class GristAPIAdapter(Adapter):
         limit: Optional[int] = None,
         **kwargs: Any,
     ) -> Iterator[Dict[str, Any]]:
-        logger.debug("Bounds:", bounds)
-        logger.debug("Order:", order)
+        logger.debug(f"Bounds= {bounds}")
+        logger.debug(f"Order= {order}")
 
         # 01) synthetic orgs
         if self.state.is_orgs:
@@ -663,7 +673,7 @@ class GristAPIAdapter(Adapter):
         _ = self.get_columns()  # warm the schema cache
 
         params = self._build_records_params(bounds, order, limit)
-        logger.debug("Params:", params)
+        logger.debug(f"Params= {params}")
 
         # Stream rows directly from /records; we rely on the server for filtering/sorting/limit.
         for row in self.client.iter_records(self.state.doc_id, table_id, params=params):  # type: ignore[arg-type]
