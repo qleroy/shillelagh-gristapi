@@ -50,7 +50,6 @@ from .http import ClientConfig, GristClient, CacheConfig
 from .schema import map_grist_type
 from .schema import Reference
 from .schema import ReferenceList
-from .schema import GristHelperDisplayCol
 
 
 GRIST_PREFIX = "grist://"
@@ -428,10 +427,12 @@ class GristAPIAdapter(Adapter):
             cols: Dict[str, Field] = {}
             displayCols: Dict[str, int] = {}
             for col in columns:
-                cid = col.get("id")
+                cid = str(col.get("id"))
                 ctype = col["fields"].get("type")
-                grist_type = map_grist_type(str(ctype), colId=str(cid))
-                if grist_type == GristHelperDisplayCol():
+                grist_type = map_grist_type(str(ctype))
+                if cid.startswith("gristHelper_Display"):
+                    continue
+                if cid == "manualSort":
                     continue
                 cols[str(cid)] = grist_type
                 displayCols[str(cid)] = col["fields"].get("displayCol", 0)
