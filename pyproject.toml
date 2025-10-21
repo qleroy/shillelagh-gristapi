@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shillelagh-gristapi"
-version = "0.1.6"
+version = "0.1.7"
 description = "Shillelagh adapter to query Grist documents and tables via SQL."
 readme = "README.md"
 license = { file = "LICENSE" }
