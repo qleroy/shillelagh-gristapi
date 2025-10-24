@@ -129,11 +129,11 @@ class GristAPIAdapter(Adapter):
         doc_id,
         table_id,
         part2,
-        qs,
+        query_params: Dict[str, Any],
         grist_cfg: Optional[Dict[str, Any]] = None,
-        server: Optional[str] = None,
-        org_id: Optional[int] = None,
-        api_key: Optional[str] = None,
+        server: Optional[str] = None,  # backwards compatibility
+        org_id: Optional[int] = None,  # backwards compatibility
+        api_key: Optional[str] = None,  # backwards compatibility
         cache_cfg: Optional[Dict[str, Any]] = None,
         cachepath: Optional[str] = None,
     ) -> None:
@@ -151,7 +151,7 @@ class GristAPIAdapter(Adapter):
           - workspace_id (for listing docs)
           - enabled (default True = caching enabled)
           - metadata_ttl (default 300 = 5min, 0 = disabled)
-          - records_ttl (default 60 = 1min; 0 = disabled)
+          - records_ttl (default 60 = 1min, 0 = disabled)
           - maxsize (default 1024)
           - backend (default "memory", or "sqlite" for on-disk persistence)
           - filename (for sqlite backend; default "gristapi_cache.sqlite")
@@ -166,62 +166,61 @@ class GristAPIAdapter(Adapter):
                 org_id=org_id,
                 api_key=api_key,
             )
-        gk = grist_cfg
-        ck = cache_cfg or {}
 
-        server = qs.get("server") or gk.get("server")
+        cache_cfg = cache_cfg or {}
+
+        server = query_params.get("server") or grist_cfg.get("server")
         if not server:
             raise ProgrammingError(
                 "Grist server URL is required (adapter_kwargs['gristapi']['server'])."
             )
-        org_id = qs.get("org_id") or gk.get("org_id")
+        org_id = query_params.get("org_id") or grist_cfg.get("org_id")
         if not org_id:
             raise ProgrammingError(
                 "Org ID is required (adapter_kwargs['gristapi']['org_id'])."
             )
         if isinstance(org_id, list):
             org_id = org_id[0]
-        api_key = qs.get("api_key") or gk.get("api_key")
+        api_key = query_params.get("api_key") or grist_cfg.get("api_key")
         if not api_key:
             raise ProgrammingError(
                 "Grist API key is required (adapter_kwargs['gristapi']['api_key'])."
             )
         if isinstance(api_key, list):
             api_key = api_key[0]
-        # workspace_id = qs.get("workspace_id") or gk.get("workspace_id", None)
-        # if isinstance(workspace_id, list):
-        # workspace_id = workspace_id[0]
 
-        if "enabled" in qs:
-            enabled_str = qs["enabled"][0]  # get first value from query string
+        if "enabled" in query_params:
+            enabled_str = query_params["enabled"][
+                0
+            ]  # get first value from query string
             enabled = enabled_str.lower() in ("1", "true", "yes", "on")
         else:
-            enabled = ck.get("enabled", True)
+            enabled = cache_cfg.get("enabled", True)
 
-        if metadata_ttl := qs.get("metadata_ttl"):
+        if metadata_ttl := query_params.get("metadata_ttl"):
             metadata_ttl = int(metadata_ttl[0])
         else:
-            metadata_ttl = int(ck.get("metadata_ttl", 300))
+            metadata_ttl = int(cache_cfg.get("metadata_ttl", 300))
 
-        if records_ttl := qs.get("records_ttl"):
+        if records_ttl := query_params.get("records_ttl"):
             records_ttl = int(records_ttl[0])
         else:
-            records_ttl = int(ck.get("records_ttl", 60))
+            records_ttl = int(cache_cfg.get("records_ttl", 60))
 
-        if maxsize := qs.get("maxsize"):
+        if maxsize := query_params.get("maxsize"):
             maxsize = int(maxsize[0])
         else:
-            maxsize = int(ck.get("maxsize", 1024))
+            maxsize = int(cache_cfg.get("maxsize", 1024))
 
-        if backend := qs.get("backend"):
+        if backend := query_params.get("backend"):
             backend = backend[0]
         else:
-            backend = ck.get("backend", "sqlite")
+            backend = cache_cfg.get("backend", "sqlite")
 
-        if filename := qs.get("filename"):
+        if filename := query_params.get("filename"):
             filename = filename[0]
         else:
-            filename = ck.get("filename", "cache.sqlite")
+            filename = cache_cfg.get("filename", "cache.sqlite")
 
         if not cachepath:
             cachepath = os.path.expanduser(".")
@@ -306,27 +305,27 @@ class GristAPIAdapter(Adapter):
         netloc = parsed.netloc
         path = parsed.path.strip("/")
         part1, part2 = (path.split("/", 1) + [None])[:2]
-        qs = urllib.parse.parse_qs(parsed.query)
+        query_params = urllib.parse.parse_qs(parsed.query)
         if not netloc:
-            return None, None, None, qs
+            return None, None, None, query_params
         elif netloc == SPECIAL_ORGS:
-            return SPECIAL_ORGS, None, None, qs
+            return SPECIAL_ORGS, None, None, query_params
         elif netloc == SPECIAL_WORKSPACES:
-            return SPECIAL_WORKSPACES, None, None, qs
+            return SPECIAL_WORKSPACES, None, None, query_params
         elif netloc == SPECIAL_DOCS:
-            return SPECIAL_DOCS, None, None, qs
+            return SPECIAL_DOCS, None, None, query_params
         else:
             doc_id = netloc
             if part1 == SPECIAL_WORKSPACES:
-                return doc_id, SPECIAL_WORKSPACES, None, qs
+                return doc_id, SPECIAL_WORKSPACES, None, query_params
             if part1 == SPECIAL_DOCS:
-                return doc_id, SPECIAL_DOCS, None, qs
+                return doc_id, SPECIAL_DOCS, None, query_params
             elif part1 and part2 == SPECIAL_COLUMNS:
                 doc_id, table_id = netloc, part1
-                return doc_id, table_id, part2, qs
+                return doc_id, table_id, part2, query_params
             else:
                 table_id = path
-                return doc_id, table_id, None, qs
+                return doc_id, table_id, None, query_params
 
     @staticmethod
     def supports(uri: str, fast: bool = True, **kwargs: Any) -> bool:
