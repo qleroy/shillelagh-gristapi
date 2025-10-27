@@ -48,7 +48,7 @@ pip install -e .[dev]
 
 ## ⚙️ Configuration
 You need a Grist API key. 
-- Fin doou `API_KEY` in your profile settings. See [Grist docs](https://support.getgrist.com/rest-api/).
+- Find your `API_KEY` in your profile settings. See [Grist docs](https://support.getgrist.com/rest-api/).
 - Find your `ORG_ID`  with the [orgs endpoint](https://support.getgrist.com/api/#tag/orgs/operation/listOrgs), e.g. curl -H "Authorization: Bearer <replace-with-your-apy-key> "<replace-with-your-server>/api/orgs/" | jq '.[]|.id',
 
 ```yaml
@@ -61,6 +61,11 @@ gristapi:
 ---
 
 ## 🧑‍💻 Usage
+
+The GristAPIAdapter exposes the [Grist REST API](https://support.getgrist.com/api/)
+as virtual SQL tables using [Shillelagh](https://github.com/betodealmeida/shillelagh).
+This allows you to explore and query your Grist data directly from Python (or any tool that speaks SQLite)
+without writing any HTTP calls or parsing JSON manually.
 
 ### 🖥️ CLI
 
@@ -257,5 +262,19 @@ select * from 'grist://<doc-id>/<table-id>'
 
 --- 
 
+## 🧠 Notes
+- All data access is read-only (no insert/update/delete).
+- `WHERE` (equality), `LIMIT`, and `ORDER BY` are pushed down to the /records API.
+- Caching reduces repeated API calls and speeds up interactive use.
+- Supported Grist type mapping => Shillelagh field types:
+| Grist Type                | Shillelagh Field    | 
+|---------------------------|---------------------|
+| Text                      | String()            |
+| Choice                    | String()            |
+| Int                       | Integer()           |
+| Numeric                   | Float()             |
+| Bool                      | Boolean()           |
+| DateTime / Date           | DateTime()          |
+
 ## 📄 License
-MIT — see (LICENSE)[/LICENSE].
+MIT — see [LICENSE](/LICENSE).
