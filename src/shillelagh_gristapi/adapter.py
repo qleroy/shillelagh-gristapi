@@ -286,40 +286,56 @@ class GristAPIAdapter(Adapter):
         uri: str,
     ) -> Tuple[Optional[str], Optional[str], Optional[str], Dict[str, Any]]:
         """
-        Parse a grist:// URI into (doc_id, table_id_or_name).
+         Parse a grist:// URI into (doc_id, table_id, part2, query_params).
 
-        grist://                      -> (None, None)           # list docs
-        grist://__orgs__              -> (SPECIAL_ORGS, None)   # list orgs
-        grist://<doc_id>              -> (<doc_id>, None)       # list tables
-        grist://<doc_id>/__columns__  -> (<doc_id>, SPECIAL_COLUMNS) # list columns
-        grist://<doc_id>/<table>      -> (<doc_id>, table)      # table rows
+        Grammar (netloc = <doc_id> or a special root):
+          grist://                                 -> (None, None, None, q)                 # list docs (root)
+          grist://__orgs__                         -> (SPECIAL_ORGS, None, None, q)         # list orgs
+          grist://__workspaces__                   -> (SPECIAL_WORKSPACES, None, None, q)   # list workspaces
+          grist://__docs__                         -> (SPECIAL_DOCS, None, None, q)         # list docs (alias)
+          grist://<doc_id>                         -> (<doc_id>, None, None, q)             # list tables in doc
+          grist://<doc_id>/<table_id>/__columns__  -> (<doc_id>, <table_id>, SPECIAL_COLUMNS, q) # list columns in table
         """
         path = uri[len(GRIST_PREFIX) :].strip("/")
         parsed = urllib.parse.urlparse(uri)
-        netloc = parsed.netloc
-        path = parsed.path.strip("/")
-        part1, part2 = (path.split("/", 1) + [None])[:2]
+        netloc = parsed.netloc.strip()
+        # Split and decode the path segments (filter out empty strings)
+        segs = [urllib.parse.unquote(p) for p in parsed.path.split("/") if p]
         query_params = urllib.parse.parse_qs(parsed.query)
+
+        # Case 1: Root listing (no netloc) => list available documents
         if not netloc:
             return None, None, None, query_params
-        elif netloc == SPECIAL_ORGS:
-            return SPECIAL_ORGS, None, None, query_params
-        elif netloc == SPECIAL_WORKSPACES:
-            return SPECIAL_WORKSPACES, None, None, query_params
-        elif netloc == SPECIAL_DOCS:
-            return SPECIAL_DOCS, None, None, query_params
-        else:
-            doc_id = netloc
-            if part1 == SPECIAL_WORKSPACES:
-                return doc_id, SPECIAL_WORKSPACES, None, query_params
-            if part1 == SPECIAL_DOCS:
-                return doc_id, SPECIAL_DOCS, None, query_params
-            elif part1 and part2 == SPECIAL_COLUMNS:
-                doc_id, table_id = netloc, part1
-                return doc_id, table_id, part2, query_params
-            else:
-                table_id = path
-                return doc_id, table_id, None, query_params
+
+        # Case 2: Special root resources (__orgs__, __workspaces__, __docs__)
+        if netloc in (SPECIAL_ORGS, SPECIAL_WORKSPACES, SPECIAL_DOCS):
+            return netloc, None, None, query_params
+
+        # Case 3: Regular document ID (e.g. grist://doc-xyz123)
+        doc_id = netloc
+
+        # No path segments => list tables in that document
+        if len(segs) == 0:
+            return doc_id, None, None, query_params
+
+        # Single segment => either a normal table or an internal special tag (__docs__)
+        if len(segs) == 1:
+            s0 = segs[0]
+            if s0 == SPECIAL_DOCS:
+                # Some users may use grist://<workspace_id>/__docs__ (list docs for a workspace)
+                # Only makes sense if <doc_id> is actually a workspace_id.
+                return doc_id, s0, None, query_params
+            return doc_id, s0, None, query_params
+
+        # Multiple segments:
+        # If the last one is __columns__, treat everything before it as the table_id.
+        if segs[-1] == SPECIAL_COLUMNS:
+            table_id = "/".join(segs[:-1])
+            return doc_id, table_id, SPECIAL_COLUMNS, query_params
+
+        # Otherwise, rejoin everything as a (possibly nested) table identifier.
+        table_id = "/".join(segs)
+        return doc_id, table_id, None, query_params
 
     @staticmethod
     def supports(uri: str, fast: bool = True, **kwargs: Any) -> bool:
