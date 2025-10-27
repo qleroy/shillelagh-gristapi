@@ -140,37 +140,25 @@ class GristAPIAdapter(Adapter):
         """
         Construct the adapter.
 
-        Parameters
-        ----------
-        doc_id : str | None
-            Document identifier (e.g. 'doc123').
-            None when listing all docs.
-        table_id : str | None
-            Table identifier within a doc.
-            None when listing tables.
-        subresource : str | None
-            Optional secondary resource within a table (e.g. "__columns__").
-        query_params : dict
-            Parsed query parameters from the URI (output of parse_qs()).
+        Required (via adapter_kwargs['gristapi'] or legacy kwargs or URI query):
+        - server:  Grist base URL (e.g. "https://docs.getgrist.com")
+        - org_id:  Organization ID (int)
+        - api_key: API token
 
-        Required (from adapter_kwargs['gristapi'] or legacy kwargs or query params):
-        - server:   Grist base URL, e.g. "https://grist.example.com"
-        - org_id:   Organization identifier (int)
-        - api_key:  API access token
-
-        Optional cache knobs (query params override cache_cfg):
+        Optional caching (URI query > cache_cfg > defaults):
         - enabled       (bool; default True)
         - metadata_ttl  (int seconds; default 300)
         - records_ttl   (int seconds; default 60)
         - maxsize       (int; default 1024)
         - backend       ("sqlite" or "memory"; default "sqlite")
-        - filename      (cache file name when backend="sqlite"; default "cache.sqlite")
-        - cachepath     (directory for the cache file; default "~/.cache/gristapi")
+        - filename      (cache file name when sqlite; default "grist_cache.sqlite")
+        - cachepath     (directory for cache file; default "~/.cache/gristapi")
         """
+        import tempfile
 
-        # ---------- Small helpers (local scope) ----------
+        # ---------- small local helpers ----------
         def _qs_get(qs: Dict[str, Any], key: str, default: Any = None) -> Any:
-            """Return first value for key from parse_qs-like dict, else default."""
+            """Return first value for key from a parse_qs-like dict, else default."""
             v = qs.get(key, default)
             return v[0] if isinstance(v, list) else v
 
@@ -189,14 +177,28 @@ class GristAPIAdapter(Adapter):
             except (TypeError, ValueError):
                 return None
 
-        # ---------- Validate config presence (legacy + modern) ----------
+        def _get_str_param(key: str, default: Optional[str] = None) -> Optional[str]:
+            return _qs_get(query_params, key, cache_cfg.get(key, default))
+
+        def _get_int_param(key: str, default: int) -> int:
+            return (
+                _to_int(_qs_get(query_params, key, cache_cfg.get(key, default)))
+                or default
+            )
+
+        def _get_bool_param(key: str, default: bool) -> bool:
+            val = _qs_get(query_params, key, cache_cfg.get(key, default))
+            parsed = _to_bool(val) if val is not None else None
+            return default if parsed is None else parsed
+
+        # ---------- validate base config presence (legacy + modern) ----------
         assert_grist_params(
             grist_cfg=grist_cfg, server=server, org_id=org_id, api_key=api_key
         )
         base_cfg = grist_cfg or {"server": server, "org_id": org_id, "api_key": api_key}
         cache_cfg = cache_cfg or {}
 
-        # ---------- Resolve core credentials (query params override config) ----------
+        # ---------- resolve credentials (URI > config) ----------
         server_val = _qs_get(query_params, "server", base_cfg.get("server"))
         org_val = _qs_get(query_params, "org_id", base_cfg.get("org_id"))
         key_val = _qs_get(query_params, "api_key", base_cfg.get("api_key"))
@@ -217,46 +219,61 @@ class GristAPIAdapter(Adapter):
                 "Grist API key is required (adapter_kwargs['gristapi']['api_key'])."
             )
 
-        # ---------- Resolve cache configuration (query params > cache_cfg > defaults) ----------
-        def _get_str_param(key: str, default: str = None) -> Optional[str]:
-            return _qs_get(query_params, key, cache_cfg.get(key, default))
-
-        def _get_int_param(key: str, default: int) -> int:
-            return (
-                _to_int(_qs_get(query_params, key, cache_cfg.get(key, default)))
-                or default
-            )
-
-        def _get_bool_param(key: str, default: bool) -> Optional[bool]:
-            val = _qs_get(query_params, key, cache_cfg.get(key, default))
-            return _to_bool(val) if val is not None else default
-
-        # Then the actual config parsing becomes ultra-readable:
+        # ---------- resolve cache config (URI > cache_cfg > defaults) ----------
         enabled_val = _get_bool_param("enabled", True)
         metadata_ttl_val = _get_int_param("metadata_ttl", 300)
         records_ttl_val = _get_int_param("records_ttl", 60)
         maxsize_val = _get_int_param("maxsize", 1024)
-        backend_val = _get_str_param("backend", "sqlite")
-        filename_val = _get_str_param("filename", "cache.sqlite")
+        backend_val = _get_str_param("backend", "sqlite") or "sqlite"
+        filename_val = (
+            _get_str_param("filename", "cache.sqlite") or "grist_cache.sqlite"
+        )
 
-        # ---------- Resolve cache path (default to ~/.cache/gristapi) ----------
-        if not cachepath:
-            cachepath = os.path.join(os.path.expanduser("~"), ".cache", "gristapi")
-        try:
-            os.makedirs(cachepath, exist_ok=True)
-        except OSError as e:
-            raise RuntimeError(f"Cache directory unavailable: {cachepath}") from e
+        # ---------- resolve cache directory with fallbacks and safety ----------
+        # Priority: function arg > URI query > cache_cfg > default (~/.cache/gristapi)
+        raw_cache_dir = (
+            cachepath
+            or _get_str_param("cachepath")
+            or cache_cfg.get("cachepath")
+            or os.path.join(os.path.expanduser("~"), ".cache", "gristapi")
+        )
+        cache_dir = os.path.abspath(os.path.expanduser(raw_cache_dir))
 
-        # ---------- Ensure filename is a bare file name (no directories) ----------
-        if filename_val:
-            filename_base = os.path.basename(filename_val)
-            if filename_base != filename_val:
-                raise ValueError(f"Invalid filename: {filename_val}")
-            full_cache_path = os.path.join(cachepath, filename_base)
-        else:
-            full_cache_path = os.path.join(cachepath, "cache.sqlite")
+        # ensure directory is writable; fallback to /tmp/gristapi if not
+        def _ensure_writable_directory(path: str) -> str:
+            try:
+                os.makedirs(path, exist_ok=True)
+                test_file = os.path.join(path, ".write_test")
+                with open(test_file, "wb") as fh:
+                    fh.write(b"ok")
+                os.remove(test_file)
+                return path
+            except OSError as e:
+                logger.warning(
+                    "Cache dir not writable '%s' (%s). Falling back to /tmp/gristapi.",
+                    path,
+                    e,
+                )
+                fallback = os.path.join(tempfile.gettempdir(), "gristapi")
+                os.makedirs(fallback, exist_ok=True)
+                return fallback
 
-        # ---------- Build cache config ----------
+        cache_dir = _ensure_writable_directory(cache_dir)
+
+        # filename must be a bare name (no directories)
+        fname = os.path.basename(filename_val)
+        if fname != filename_val:
+            raise ValueError(
+                f"Invalid filename (must not contain directories): {filename_val}"
+            )
+
+        full_cache_path = os.path.join(cache_dir, fname)
+        if backend_val == "memory":
+            logger.debug(
+                "Cache backend=memory; path '%s' will be ignored.", full_cache_path
+            )
+
+        # ---------- build cache config ----------
         cache_config = CacheConfig(
             enabled=enabled_val,
             metadata_ttl=metadata_ttl_val,
@@ -266,11 +283,11 @@ class GristAPIAdapter(Adapter):
             path=full_cache_path,
         )
 
-        # ---------- Interpret special modes from URI parts ----------
-        # Workspace-scoped doc listing: grist://<workspace_id>/__docs__
+        # ---------- interpret special modes from URI parts ----------
+        # Workspace-scoped docs listing (non-root): grist://<workspace_id>/__docs__
         workspace_id = doc_id if table_id == SPECIAL_DOCS else None
 
-        # ---------- Persist state & bootstrap HTTP client ----------
+        # ---------- persist state & bootstrap HTTP client ----------
         self.state = _State(
             server=server_val,
             org_id=org_val,
@@ -280,15 +297,15 @@ class GristAPIAdapter(Adapter):
             workspace_id=workspace_id,
             is_orgs=(doc_id == SPECIAL_ORGS),
             is_columns=(subresource == SPECIAL_COLUMNS),
-            is_workspaces=(doc_id == SPECIAL_WORKSPACES),  # only valid at root-level
-            is_docs=(doc_id in (None, SPECIAL_DOCS)),  # root or special alias
+            is_workspaces=(doc_id == SPECIAL_WORKSPACES),
+            is_docs=(doc_id in (None, SPECIAL_DOCS) or table_id == SPECIAL_DOCS),
         )
 
         self.client = GristClient(
             ClientConfig(server=server_val, api_key=key_val, cache=cache_config)
         )
 
-        # ---------- Lazy schema cache ----------
+        # ---------- lazy schema cache ----------
         self._columns: Optional[Dict[str, Field]] = None
         self._resolved_table_id: str = ""
 
