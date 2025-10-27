@@ -90,7 +90,7 @@ Override any parameter per query:
 SELECT * FROM "grist://<DOC_ID>/<TABLE_ID>?records_ttl=30&backend=memory";
 ```
 
-➡️ See [config.md](docs/configuration.md) for full details, examples, defaults, and troubleshooting.
+➡️ See [configuration.md](docs/configuration.md) for full details, examples, defaults, and troubleshooting.
 
 ---
 
@@ -222,14 +222,15 @@ select * from 'grist://<DOC_ID>/<TABLE_ID>'
 - `WHERE` (equality), `LIMIT`, and `ORDER BY` are pushed down to the /records API.
 - Caching reduces repeated API calls and speeds up interactive use.
 - Supported Grist type mapping →  Shillelagh field types:
-| Grist Type                | Shillelagh Field    | 
-|---------------------------|---------------------|
-| Text                      | String()            |
-| Choice                    | String()            |
-| Int                       | Integer()           |
-| Numeric                   | Float()             |
-| Bool                      | Boolean()           |
-| DateTime / Date           | DateTime()          |
+
+| Grist Type         | Shillelagh Field |
+|--------------------|------------------|
+| Text               | `String()`       |
+| Choice             | `String()`       |
+| Int                | `Integer()`      |
+| Numeric            | `Float()`        |
+| Bool               | `Boolean()`      |
+| Date / DateTime    | `DateTime()`     |
 
 ## 📄 License
 MIT — see [LICENSE](/LICENSE).
