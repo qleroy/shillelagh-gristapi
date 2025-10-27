@@ -382,16 +382,14 @@ class GristAPIAdapter(Adapter):
 
     def get_columns(self) -> Dict[str, Field]:
         """
-        Return a mapping of column_name -> Field() for the current resource.
+        Return a mapping {column_name: Field()} for the current resource.
 
-        Listing resources expose two synthetic columns:
-          - docs list:   {"id": String(), "name": String()}
-          - tables list: {"id": String(), "name": String()}
-
-        For a specific table, we fetch the table schema once and map official
-        Grist types to shillelagh fields using `map_grist_type`.
+        Synthetic resources expose fixed schemas (orgs, workspaces, docs, columns, tables).
+        For real tables, we fetch Grist metadata once, map Grist types via `map_grist_type`,
+        and build a `field_id -> displayed_field_id` map to support Reference/ReferenceList rendering.
         """
-        # synthetic: orgs
+
+        # ---- Synthetic: organizations ----
         if self.state.is_orgs:
             return {
                 "id": String(),
@@ -402,7 +400,7 @@ class GristAPIAdapter(Adapter):
                 "access": String(),
             }
 
-        # synthetic: workspaces
+        # ---- Synthetic: workspaces ----
         if self.state.is_workspaces:
             return {
                 "id": String(),
@@ -413,7 +411,7 @@ class GristAPIAdapter(Adapter):
                 "access": String(),
             }
 
-        # root: list docs
+        # ---- Synthetic: docs listing (root / __docs__) ----
         if self.state.is_docs:
             return {
                 "id": String(),
@@ -426,7 +424,7 @@ class GristAPIAdapter(Adapter):
                 "orgDomain": String(),
             }
 
-        # synthetic: columns for a doc
+        # ---- Synthetic: list columns for a given table ----
         if self.state.is_columns:
             return {
                 "id": String(),
@@ -446,7 +444,7 @@ class GristAPIAdapter(Adapter):
                 "recalcWhen": Integer(),
             }
 
-        # list tables in a doc
+        # ---- Synthetic: list tables in a doc ----
         if not self.state.table_id:
             return {
                 "id": String(),
@@ -458,43 +456,82 @@ class GristAPIAdapter(Adapter):
                 "tableRef": Integer(),
             }
 
-        # Rows of a specific table: discover columns via list_columns
-        if self._columns is None:
-            table_id = self.state.table_id
+        # ---- Real table: discover schema once and cache it ----
+        if self._columns is not None:
+            return self._columns
 
-            # Fetch column metadata
-            columns = self.client.list_columns(self.state.doc_id, table_id)  # type: ignore[arg-type]
-            cols: Dict[str, Field] = {}
-            displayCols: Dict[str, int] = {}
-            for col in columns:
-                cid = str(col.get("id"))
-                ctype = col["fields"].get("type")
-                grist_type = map_grist_type(str(ctype))
-                if cid.startswith("gristHelper_Display"):
-                    continue
-                if cid == "manualSort":
-                    continue
-                cols[str(cid)] = grist_type
-                displayCols[str(cid)] = col["fields"].get("displayCol", 0)
+        doc_id = self.state.doc_id
+        table_id = self.state.table_id
+        if not doc_id or not table_id:
+            raise ProgrammingError(
+                "Missing doc_id or table_id for table schema discovery."
+            )
 
-            field_to_displayed_col_id: Dict[str, str] = {}
-            for col in columns:
-                displayCol = col["fields"].get("displayCol", 0)
-                if displayCol:
-                    for col2 in columns:
-                        colRef = col2["fields"].get("colRef", 0)
-                        if colRef == displayCol:
-                            field_to_displayed_col_id[col["id"]] = col2["id"]
-                            break
+        try:
+            columns_meta = self.client.list_columns(doc_id, table_id)  # type: ignore[arg-type]
+        except Exception as exc:
+            logger.exception(
+                "Failed to list columns: doc=%r table=%r", doc_id, table_id
+            )
+            raise ProgrammingError(f"Grist list_columns failed: {exc}") from exc
 
-            if not cols:
-                raise ProgrammingError(
-                    f"Grist table has no columns: doc={self.state.doc_id!r} table={table_id!r}"
-                )
+        schema: Dict[str, Field] = {}
+        # Track which columns declare a displayCol (referencing another column by colRef)
+        wants_display_for: Dict[str, int] = {}  # field_id -> displayCol (colRef int)
+        # Build colRef -> id index so we can resolve displayCol in O(1)
+        colref_to_id: Dict[int, str] = {}
 
-            self._columns = cols
-            self._field_to_displayed_col_id = field_to_displayed_col_id
-            self._columns["id"] = Integer()
+        # First pass: build schema & colRef index, skip helper columns
+        for meta in columns_meta:
+            field_id = str(meta.get("id"))
+            fields = meta.get("fields", {}) or {}
+            if not field_id:
+                continue
+
+            # Skip internal helper fields and manual sort
+            if field_id.startswith("gristHelper_Display") or field_id == "manualSort":
+                continue
+
+            # Map grist type -> Shillelagh Field
+            grist_type_name = str(fields.get("type"))
+            try:
+                field_class = map_grist_type(grist_type_name)
+            except Exception:
+                # Fallback to String for unknown/unsupported types
+                field_class = String()
+
+            schema[field_id] = field_class
+
+            # Index colRef → id for later resolution of displayCol
+            col_ref = fields.get("colRef")
+            if isinstance(col_ref, int):
+                colref_to_id[col_ref] = field_id
+
+            # Record a display target if present
+            display_col_ref = fields.get("displayCol")
+            if isinstance(display_col_ref, int) and display_col_ref > 0:
+                wants_display_for[field_id] = display_col_ref
+
+        if not schema:
+            raise ProgrammingError(
+                f"Grist table has no columns: doc={doc_id!r} table={table_id!r}"
+            )
+
+        # Second pass: resolve displayCol references to field IDs
+        field_to_displayed_col_id: Dict[str, str] = {}
+        for field_id, display_ref in wants_display_for.items():
+            target_id = colref_to_id.get(display_ref)
+            if target_id:
+                field_to_displayed_col_id[field_id] = target_id
+
+        # Ensure there is an "id" field (don’t overwrite if the table already has one)
+        if "id" not in schema:
+            schema["id"] = Integer()
+
+        # Cache results
+        self._columns = schema
+        # Store the mapping for Reference / ReferenceList rendering path
+        self._field_to_displayed_col_id = field_to_displayed_col_id  # type: ignore[attr-defined]
 
         return self._columns
 
@@ -558,30 +595,73 @@ class GristAPIAdapter(Adapter):
 
     def _row_to_python(self, row: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Convertit une ligne brute renvoyée par l’API Grist
-        en valeurs Python natives selon self._columns.
+        Convert a raw Grist row into native Python values according to self._columns.
+        Safe against None and non-list payloads returned by the API.
         """
-        parsed = {}
 
-        for col, field in self._columns.items():
-            raw_value = row.get(col)
+        # guard in case mapping wasn't initialized yet
+        field_to_display = getattr(self, "_field_to_displayed_col_id", {}) or {}
 
-            if isinstance(field, DateTime) and raw_value is not None:
-                try:
-                    raw_value = datetime.datetime.fromtimestamp(int(raw_value))
-                except (ValueError, TypeError):
-                    raw_value = None
+        def _join_after_sentinel(value: Any) -> Optional[str]:
+            """
+            Grist often returns lists with a leading sentinel/metadata element.
+            This returns a comma-joined string of elements after the first one.
+            If value is None or empty, returns None. If not a list, returns str(value).
+            """
+            if value is None:
+                return None
+            if isinstance(value, list):
+                if len(value) <= 1:
+                    return None  # either [] or [sentinel] → nothing to show
+                return ",".join(str(x) for x in value[1:])
+            # scalar case (string/number/etc.)
+            return str(value)
+
+        def _parse_dt(v: Any) -> Optional[datetime.datetime]:
+            if v in (None, ""):
+                return None
+            return datetime.datetime.fromtimestamp(v)
+
+        parsed: Dict[str, Any] = {}
+        for col_name, field in (self._columns or {}).items():
+            raw = row.get(col_name)
+
+            # Datetime fields: robust parsing
+            if isinstance(field, DateTime):
+                parsed_val = _parse_dt(raw)
+
+            # Reference => display via mapped displayed column (if available)
             elif isinstance(field, Reference):
-                displayedColId = self._field_to_displayed_col_id.get(col)
-                raw_value = row.get(displayedColId)
-            elif isinstance(field, ReferenceList):
-                displayedColId = self._field_to_displayed_col_id.get(col)
-                displayedColValue = row.get(displayedColId)
-                raw_value = ",".join(displayedColValue[1:])
-            elif isinstance(raw_value, list):
-                raw_value = ",".join([str(item) for item in raw_value[1:]])
+                display_id = field_to_display.get(col_name)
+                if display_id:
+                    parsed_val = _join_after_sentinel(row.get(display_id))
+                    # fallback to raw if display is missing/empty
+                    if parsed_val is None:
+                        parsed_val = _join_after_sentinel(raw)
+                else:
+                    parsed_val = _join_after_sentinel(raw)
 
-            parsed[col] = field.parse(raw_value) if raw_value is not None else None
+            # ReferenceList => display via mapped displayed column (list-safe)
+            elif isinstance(field, ReferenceList):
+                display_id = field_to_display.get(col_name)
+                if display_id:
+                    parsed_val = _join_after_sentinel(row.get(display_id))
+                    if parsed_val is None:
+                        parsed_val = _join_after_sentinel(raw)
+                else:
+                    parsed_val = _join_after_sentinel(raw)
+
+            # Bare list values (skip sentinel if present)
+            elif isinstance(raw, list):
+                parsed_val = _join_after_sentinel(raw)
+
+            else:
+                parsed_val = raw
+
+            # Final parse through field type if not None
+            parsed[col_name] = (
+                field.parse(parsed_val) if parsed_val is not None else None
+            )
 
         return parsed
 
