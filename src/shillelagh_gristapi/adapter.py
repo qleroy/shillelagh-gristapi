@@ -87,7 +87,7 @@ class _State:
 # ---------------------------
 # Backwards compatibility
 # ---------------------------
-def assert_params(
+def assert_grist_params(
     grist_cfg: Optional[Dict[str, Any]] = None,
     server: Optional[str] = None,
     org_id: Optional[int] = None,
@@ -140,15 +140,11 @@ class GristAPIAdapter(Adapter):
         """
         Construct the adapter.
 
-        Credentials and server URL can be supplied either at the top level
-        or under adapter_kwargs['gristapi'] to align with Shillelagh conventions.
-
         Required:
           - server
           - org_id
           - api_key
         Optional:
-          - workspace_id (for listing docs)
           - enabled (default True = caching enabled)
           - metadata_ttl (default 300 = 5min, 0 = disabled)
           - records_ttl (default 60 = 1min, 0 = disabled)
@@ -157,7 +153,7 @@ class GristAPIAdapter(Adapter):
           - filename (for sqlite backend; default "gristapi_cache.sqlite")
           - cachepath (directory for sqlite file; default ~/.cache/gristapi/)
         """
-        assert_params(
+        assert_grist_params(
             grist_cfg=grist_cfg, server=server, org_id=org_id, api_key=api_key
         )
         if grist_cfg is None:
@@ -181,6 +177,7 @@ class GristAPIAdapter(Adapter):
             )
         if isinstance(org_id, list):
             org_id = org_id[0]
+
         api_key = query_params.get("api_key") or grist_cfg.get("api_key")
         if not api_key:
             raise ProgrammingError(
@@ -189,38 +186,35 @@ class GristAPIAdapter(Adapter):
         if isinstance(api_key, list):
             api_key = api_key[0]
 
-        if "enabled" in query_params:
-            enabled_str = query_params["enabled"][
-                0
-            ]  # get first value from query string
+        enabled = query_params.get("enabled") or cache_cfg.get("enabled", True)
+        if isinstance(enabled, list):
+            enabled_str = enabled[0]
             enabled = enabled_str.lower() in ("1", "true", "yes", "on")
-        else:
             enabled = cache_cfg.get("enabled", True)
 
-        if metadata_ttl := query_params.get("metadata_ttl"):
-            metadata_ttl = int(metadata_ttl[0])
-        else:
-            metadata_ttl = int(cache_cfg.get("metadata_ttl", 300))
+        metadata_ttl = query_params.get("metadata_ttl") or cache_cfg.get(
+            "metadata_ttl", 300
+        )
+        if isinstance(metadata_ttl, list):
+            metadata_ttl = metadata_ttl[0]
 
-        if records_ttl := query_params.get("records_ttl"):
-            records_ttl = int(records_ttl[0])
-        else:
-            records_ttl = int(cache_cfg.get("records_ttl", 60))
+        records_ttl = query_params.get("records_ttl") or cache_cfg.get(
+            "records_ttl", 60
+        )
+        if isinstance(records_ttl, list):
+            records_ttl = records_ttl[0]
 
-        if maxsize := query_params.get("maxsize"):
-            maxsize = int(maxsize[0])
-        else:
-            maxsize = int(cache_cfg.get("maxsize", 1024))
+        maxsize = query_params.get("maxsize") or cache_cfg.get("maxsize", 1024)
+        if isinstance(maxsize, list):
+            maxsize = maxsize[0]
 
-        if backend := query_params.get("backend"):
+        backend = query_params.get("backend") or cache_cfg.get("backend", "sqlite")
+        if isinstance(backend, list):
             backend = backend[0]
-        else:
-            backend = cache_cfg.get("backend", "sqlite")
 
-        if filename := query_params.get("filename"):
+        filename = query_params.get("filename") or cache_cfg.get("filename")
+        if isinstance(filename, list):
             filename = filename[0]
-        else:
-            filename = cache_cfg.get("filename", "cache.sqlite")
 
         if not cachepath:
             cachepath = os.path.expanduser(".")
@@ -510,6 +504,10 @@ class GristAPIAdapter(Adapter):
             params["limit"] = int(limit)
 
         return params
+
+    # -----------
+    # utils
+    # ----------
 
     # -----------
     # data
