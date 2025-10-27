@@ -68,17 +68,37 @@ Default configuration in `~/.config/shillelagh/shillelagh.yaml`:
 
 ```bash
 $ shillelagh
-# List document ids
-# https://support.getgrist.com/api/#tag/workspaces/operation/listWorkspaces
-SELECT * FROM 'grist://';
+-- ---------------------------------------------------------------------
+-- 🌐 Explore your Grist instance via SQL
+-- ---------------------------------------------------------------------
+-- Each URI corresponds to a Grist REST endpoint exposed as a virtual table.
+-- You can use standard SQL (SELECT, WHERE, LIMIT, ORDER BY) from Shillelagh.
 
-# List table ids
-# https://support.getgrist.com/api/#tag/tables/operation/listTables
-SELECT * FROM 'grist://<replace-with-a-doc-id>';
+-- 1️⃣  List all accessible documents
+-- Equivalent to: GET /api/orgs/{orgId}/workspaces/{workspaceId}/docs
+-- API reference: https://support.getgrist.com/api/#tag/workspaces/operation/listWorkspaces
+SELECT * FROM "grist://";
 
-# Fetch records
-# https://support.getgrist.com/api/#tag/records
-SELECT * FROM 'grist://<replace-with-a-doc-id>/<replace-with-a-table-id>';
+-- 2️⃣  List tables inside a specific document
+-- Replace <DOC_ID> with your actual document ID (e.g. "doc_abcdef123456").
+-- Equivalent to: GET /api/docs/{docId}/tables
+-- API reference: https://support.getgrist.com/api/#tag/tables/operation/listTables
+SELECT * FROM "grist://<DOC_ID>";
+
+-- 3️⃣  Fetch all records from a specific table
+-- Replace <DOC_ID> and <TABLE_ID> with your actual IDs.
+-- Equivalent to: GET /api/docs/{docId}/tables/{tableId}/records
+-- API reference: https://support.getgrist.com/api/#tag/records
+SELECT * FROM "grist://<DOC_ID>/<TABLE_ID>";
+
+-- 4️⃣  Example: filtered and limited query (pushdown supported)
+-- WHERE clauses on equality are pushed down to Grist's /records endpoint.
+SELECT id, Name
+FROM "grist://doc_abcdef123456/Employees"
+WHERE Department = 'Finance'
+ORDER BY id
+LIMIT 10;
+
 ```
 
 ### 🐍 Python
