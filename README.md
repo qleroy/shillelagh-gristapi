@@ -46,17 +46,50 @@ pip install -e .[dev]
 
 ---
 
-## ⚙️ Configuration
-You need a Grist API key. 
-- Find your `API_KEY` in your profile settings. See [Grist docs](https://support.getgrist.com/rest-api/).
-- Find your `ORG_ID`  with the [orgs endpoint](https://support.getgrist.com/api/#tag/orgs/operation/listOrgs), e.g. curl -H "Authorization: Bearer <replace-with-your-apy-key> "<replace-with-your-server>/api/orgs/" | jq '.[]|.id',
 
-```yaml
-gristapi:
-  api_key: ${API_KEY} 
-  org_id: ${ORG_ID} 
-  server: ${SERVER} # e.g. https://docs.getgrist.com
+## ⚙️ Configuration
+
+You need a Grist API key.
+
+- Find your `API_KEY` in your profile settings. See [Grist docs](https://support.getgrist.com/rest-api/#authentication).
+- Find your `ORG_ID` with the orgs endpoint, e.g. `curl -H "Authorization: Bearer "/api/orgs/" | jq '.[]|.id'`.
+
+The adapter reads settings from:
+
+1. **URI query parameters**
+2. **`adapter_kwargs["gristapi"]`**
+3. **Built-in defaults**
+
+Minimal setup requires:
+
+```python
+"grist_cfg": {
+  "server": "https://docs.getgrist.com",
+  "org_id": 123,
+  "api_key": "XXXXXXXXX",
+}
 ```
+
+Optional caching:
+
+```python
+"cache_cfg": {
+  "enabled": True,
+  "metadata_ttl": 300,
+  "records_ttl": 60,
+  "backend": "sqlite",
+  "filename": "cache.sqlite",
+},
+"cachepath": "~/.cache/gristapi"
+```
+
+Override any parameter per query:
+
+```sql
+SELECT * FROM "grist://<DOC>/<TABLE>?records_ttl=30&backend=memory";
+```
+
+➡️ See [config.md](docs/configuration.md) for full details, examples, defaults, and troubleshooting.
 
 ---
 
@@ -169,11 +202,11 @@ connection = connect(
             # for repeated queries in production.
             "cache_cfg": {
                 "enabled": True,
-                "metadata_ttl": 10,
-                "records_ttl": 10,
-                "maxsize": 2,
+                "metadata_ttl": 3600,
+                "records_ttl": 60,
+                "maxsize": 4096,
                 "backend": "sqlite",
-                "filename": "grist_cache",
+                "filename": "cache.sqlite",
             },
 
             # -----------------------------------------------------------------
@@ -224,6 +257,8 @@ connection = connect(
 
 ### 📊 Apache Superset
 
+Full documentation
+
 - Install `shillelagh` + this adapter in your Superset image;
 - Add a Shillelagh database with URI
 ```
@@ -232,25 +267,26 @@ shillelagh+safe://
 - Configure the engine parameters
 ```json
 {
-  "connect_args":
-    {
-      "adapters":
-        ["gristapi"],
-      "adapter_kwargs":
-        {
-          "gristapi":{
-            "api_key": "<REPLACE_WITH_YOUR_API_KEY>",
-            "org_id": "<REPLACE_WITH_YOUR_ORD_ID>",
-            "server": "<REPLACE_WITH_YOUR_SERVER_URL>",
-          }
+  "connect_args": {
+    "adapters": ["gristapi"],
+    "adapter_kwargs": {
+      "gristapi": {
+        "grist_cfg": {
+          "api_key": "<REPLACE_WITH_YOUR_API_KEY>",
+          "org_id": "<REPLACE_WITH_YOUR_ORG_ID>",
+          "server": "<REPLACE_WITH_YOUR_SERVER_URL>",
         }
+      }
     }
+  }
 }
 ```
 - Create a virtual dataset using a Grist URI, e.g.:
 ```sql
-select * from 'grist://<doc-id>/<table-id>'
+select * from 'grist://<DOC_ID>/<TABLE_ID>'
 ```
+
+➡️ See [superset.md](docs/superset.md) for full details and examples.
 
 | SqlAlchemy URI | Engine parameters |
 | --- | --- |
