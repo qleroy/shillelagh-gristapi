@@ -18,7 +18,7 @@ ideal for BI tools like [Apache Superset](https://superset.apache.org/).
   - `grist://<doc_id>` → list tables in a document
   - `grist://<doc_id>/<table_id>` → query rows in a table
 - Flexible usage:
-  - **CLI**: via the `shillelagh` shell or `python -m shillelagh_gristapi ...`
+  - **CLI**: via the `shillelagh` shell,
   - **Python**: connect directly with the `connect()` API
   - **Superset**: drop-in integration for dashboards
 - **Enforces Grist access rules**:  
@@ -53,6 +53,7 @@ You need a Grist API key.
 
 - Find your `API_KEY` in your profile settings. See [Grist docs](https://support.getgrist.com/rest-api/#authentication).
 - Find your `ORG_ID` with the orgs endpoint, e.g. `curl -H "Authorization: Bearer "/api/orgs/" | jq '.[]|.id'`.
+- `SERVER` is the base URL of your Grist deployment, e.g. docs.getgrist.com.
 
 The adapter reads settings from:
 
@@ -86,7 +87,7 @@ Optional caching:
 Override any parameter per query:
 
 ```sql
-SELECT * FROM "grist://<DOC>/<TABLE>?records_ttl=30&backend=memory";
+SELECT * FROM "grist://<DOC_ID>/<TABLE_ID>?records_ttl=30&backend=memory";
 ```
 
 ➡️ See [config.md](docs/configuration.md) for full details, examples, defaults, and troubleshooting.
@@ -145,119 +146,37 @@ LIMIT 10;
 from shillelagh.backends.apsw.db import connect
 import os
 
-# ---------------------------------------------------------------------
-# Example: Initialize a Shillelagh connection using the GristAPIAdapter
-# ---------------------------------------------------------------------
-#
-# This creates a SQLite-like virtual database backed by the Grist REST API.
-# Every Grist resource (orgs, workspaces, docs, tables, columns, records)
-# can be queried as a "virtual table" via the `grist://` URI scheme.
-#
-# Example query patterns:
-#   - SELECT * FROM "grist://__orgs__"
-#   - SELECT * FROM "grist://__workspaces__"
-#   - SELECT * FROM "grist://__docs__"
-#   - SELECT * FROM "grist://<doc_id>"
-#   - SELECT * FROM "grist://<doc_id>/<table_id>"
-#   - SELECT * FROM "grist://<doc_id>/<table_id>/__columns__"
-#
-# The connection below demonstrates how to pass credentials, cache settings,
-# and runtime parameters to the adapter via `adapter_kwargs`.
-
 connection = connect(
-    ":memory:",   # in-memory SQLite connection managed by Shillelagh
-
-    # Each adapter can receive its own config via the "adapter_kwargs" mapping.
+    ":memory:"
     adapter_kwargs={
         "gristapi": {
-
-            # -----------------------------------------------------------------
-            # grist_cfg — authentication and base configuration
-            # -----------------------------------------------------------------
-            # Required keys:
-            #   - server:   Base URL of your Grist instance (e.g. https://grist.example.com)
-            #   - org_id:   Numeric organization ID
-            #   - api_key:  API token generated in your Grist profile
-            #
-            # You can also provide these directly in environment variables for security.
             "grist_cfg": {
                 "api_key": os.environ["GRIST_API_KEY"],
                 "org_id": os.environ["GRIST_ORG_ID"],
                 "server": os.environ["GRIST_SERVER"],
             },
-
-            # -----------------------------------------------------------------
-            # cache_cfg — metadata & record cache configuration
-            # -----------------------------------------------------------------
-            # Enables local caching of both schema metadata and record data.
-            #
-            #   enabled       : Enable caching (True/False)
-            #   metadata_ttl  : Time-to-live for metadata in seconds
-            #   records_ttl   : Time-to-live for record data in seconds
-            #   maxsize       : Max number of entries kept in cache
-            #   backend       : "sqlite" for persistent caching, "memory" for ephemeral
-            #   filename      : Cache file name (if backend = "sqlite")
-            #
-            # A small TTL is great for development; larger TTLs improve performance
-            # for repeated queries in production.
-            "cache_cfg": {
-                "enabled": True,
-                "metadata_ttl": 3600,
-                "records_ttl": 60,
-                "maxsize": 4096,
-                "backend": "sqlite",
-                "filename": "cache.sqlite",
-            },
-
-            # -----------------------------------------------------------------
-            # cachepath — directory to store the cache file
-            # -----------------------------------------------------------------
-            # Default is ~/.cache/gristapi/, but you can override it here.
-            # The adapter will automatically create the directory if needed.
-            "cachepath": ".",
         },
     },
 )
+cursor = connection.cursor()
 
-# ---------------------------------------------------------------------
-# Example queries
-# ---------------------------------------------------------------------
-#
-# You can now query Grist data using SQL:
-#
-#   cursor = connection.cursor()
-#   for row in cursor.execute('SELECT id, name FROM "grist://__orgs__"'):
-#       print(row)
-#
-#   # List tables in a document
-#   doc_id = "doc_abcdef123456"
-#   for row in cursor.execute(f'SELECT id FROM "grist://{doc_id}"'):
-#       print(row)
-#
-#   # Fetch rows from a specific table
-#   table_id = "MyTable"
-#   for row in cursor.execute(f'SELECT * FROM "grist://{doc_id}/{table_id}" LIMIT 5'):
-#       print(row)
-#
-# ---------------------------------------------------------------------
-# Notes:
-# ---------------------------------------------------------------------
-# - All resources are read-only by design.
-# - Query filters, LIMIT, and single-column ORDER BY are pushed down
-#   to Grist's `/records` endpoint when possible.
-# - The adapter automatically translates Grist column types to
-#   appropriate Shillelagh field classes (String, Integer, Boolean, etc.).
-# - If caching is enabled, repeated queries avoid hitting the API
-#   until TTLs expire.
-#
-# For more examples and schema details, see:
-#   https://github.com/qleroy/shillelagh-gristapi
+# List document ids
+# https://support.getgrist.com/api/#tag/workspaces/operation/listWorkspaces
+query_docs = "SELECT * FROM 'grist://';"
+cursor.execute(query_docs).fetchall()
 
+# List table ids
+# https://support.getgrist.com/api/#tag/tables/operation/listTables
+query_tables = "SELECT * FROM 'grist://<replace-with-a-doc-id>';"
+cursor.execute(query_tables).fetchall()
+
+# Fetch records
+# https://support.getgrist.com/api/#tag/records
+query = "SELECT * FROM 'grist://<replace-with-a-doc-id>/<replace-with-a-table-id>';"
+cursor.execute(query).fetchall()
 ```
 
 ### 📊 Apache Superset
-
-Full documentation
 
 - Install `shillelagh` + this adapter in your Superset image;
 - Add a Shillelagh database with URI
@@ -302,7 +221,7 @@ select * from 'grist://<DOC_ID>/<TABLE_ID>'
 - All data access is read-only (no insert/update/delete).
 - `WHERE` (equality), `LIMIT`, and `ORDER BY` are pushed down to the /records API.
 - Caching reduces repeated API calls and speeds up interactive use.
-- Supported Grist type mapping => Shillelagh field types:
+- Supported Grist type mapping →  Shillelagh field types:
 | Grist Type                | Shillelagh Field    | 
 |---------------------------|---------------------|
 | Text                      | String()            |
