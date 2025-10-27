@@ -104,6 +104,19 @@ def assert_grist_params(
 
 
 # ---------------------------
+# Date parsing helper
+# ---------------------------
+
+
+def _parse_dt(v: Any) -> Optional[datetime.datetime]:
+    if v in (None, ""):
+        return None
+    if isinstance(v, int):
+        return datetime.datetime.fromtimestamp(v)
+    return datetime.datetime.strptime(v, "%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+# ---------------------------
 # Adapter
 # ---------------------------
 
@@ -617,11 +630,6 @@ class GristAPIAdapter(Adapter):
             # scalar case (string/number/etc.)
             return str(value)
 
-        def _parse_dt(v: Any) -> Optional[datetime.datetime]:
-            if v in (None, ""):
-                return None
-            return datetime.datetime.fromtimestamp(v)
-
         parsed: Dict[str, Any] = {}
         for col_name, field in (self._columns or {}).items():
             raw = row.get(col_name)
@@ -672,130 +680,159 @@ class GristAPIAdapter(Adapter):
         limit: Optional[int] = None,
         **kwargs: Any,
     ) -> Iterator[Dict[str, Any]]:
-        logger.debug(f"Bounds= {bounds}")
-        logger.debug(f"Order= {order}")
+        logger.debug("Bounds=%s", bounds)
+        logger.debug("Order=%s", order)
 
-        # 01) synthetic orgs
+        # ---------- small helpers ----------
+
+        def _sanitize_fields(
+            payload: Dict[str, Any], mapping: Dict[str, str]
+        ) -> Dict[str, Any]:
+            """Pick known keys with optional renaming; parse dates if key endswith 'At'."""
+            out: Dict[str, Any] = {}
+            for out_key, in_key in mapping.items():
+                val = payload.get(in_key)
+                if out_key.endswith("At"):
+                    val = _parse_dt(val)
+                out[out_key] = val
+            return out
+
+        # ---------- branch: synthetic resources ----------
         if self.state.is_orgs:
-            orgs = self.client.list_orgs()
-            for org in orgs:
-                if createdAt := org.get("createdAt"):
-                    createdAt = datetime.datetime.strptime(
-                        createdAt, "%Y-%m-%dT%H:%M:%S.%fZ"
+            try:
+                for org in self.client.list_orgs():
+                    yield _sanitize_fields(
+                        org,
+                        {
+                            "id": "id",
+                            "name": "name",
+                            "createdAt": "createdAt",
+                            "updatedAt": "updatedAt",
+                            "domain": "domain",
+                            "access": "access",
+                        },
                     )
-                if updatedAt := org.get("updatedAt"):
-                    updatedAt = datetime.datetime.strptime(
-                        updatedAt, "%Y-%m-%dT%H:%M:%S.%fZ"
-                    )
-                yield {
-                    "id": org.get("id"),
-                    "name": org.get("name"),
-                    "createdAt": createdAt,
-                    "updatedAt": updatedAt,
-                    "domain": org.get("domain"),
-                    "access": org.get("access"),
-                }
+            except Exception as exc:
+                logger.exception("list_orgs failed")
+                raise ProgrammingError(f"Grist list_orgs failed: {exc}") from exc
             return
 
-        # 02) synthetic workspaces
         if self.state.is_workspaces:
-            workspaces = self.client.list_workspaces(self.state.org_id)
-            for ws in workspaces:
-                if createdAt := ws.get("createdAt"):
-                    createdAt = datetime.datetime.strptime(
-                        createdAt, "%Y-%m-%dT%H:%M:%S.%fZ"
+            try:
+                for ws in self.client.list_workspaces(self.state.org_id):
+                    yield _sanitize_fields(
+                        ws,
+                        {
+                            "id": "id",
+                            "name": "name",
+                            "createdAt": "createdAt",
+                            "updatedAt": "updatedAt",
+                            "orgDomain": "orgDomain",
+                            "access": "access",
+                        },
                     )
-                if updatedAt := ws.get("updatedAt"):
-                    updatedAt = datetime.datetime.strptime(
-                        updatedAt, "%Y-%m-%dT%H:%M:%S.%fZ"
-                    )
-                yield {
-                    "id": ws.get("id"),
-                    "name": ws.get("name"),
-                    "createdAt": createdAt,
-                    "updatedAt": updatedAt,
-                    "orgDomain": ws.get("orgDomain"),
-                    "access": ws.get("access"),
-                }
+            except Exception as exc:
+                logger.exception(
+                    "list_workspaces failed for org_id=%s", self.state.org_id
+                )
+                raise ProgrammingError(f"Grist list_workspaces failed: {exc}") from exc
             return
 
-        # 02) Docs listing — needs org_id (and optional workspace_id)
+        # Docs listing (root / __docs__)
         if self.state.is_docs:
             if self.state.org_id is None:
                 raise ProgrammingError(
                     "org_id is required in adapter_kwargs['gristapi'] to list docs"
                 )
-            for d in self.client.list_docs(self.state.org_id, self.state.workspace_id):
-                # your client yields flattened doc metadata
-                if createdAt := d.get("doc_created_at"):
-                    createdAt = datetime.datetime.strptime(
-                        createdAt, "%Y-%m-%dT%H:%M:%S.%fZ"
-                    )
-                if updatedAt := d.get("doc_updated_at"):
-                    updatedAt = datetime.datetime.strptime(
-                        updatedAt, "%Y-%m-%dT%H:%M:%S.%fZ"
-                    )
-                # if isinstance(self._columns[k], DateTime) and v is not None:
-                # v = datetime.datetime.fromtimestamp(int(v))
-                yield {
-                    "id": d.get("doc_id"),
-                    "name": d.get("doc_name"),
-                    "createdAt": createdAt,
-                    "updatedAt": updatedAt,
-                    "workspaceId": d.get("workspace_id"),
-                    "workspaceName": d.get("workspace_name"),
-                    "workspaceAccess": d.get("workspace_access"),
-                    "orgDomain": d.get("org_domain"),
-                }
+            try:
+                for d in self.client.list_docs(
+                    self.state.org_id, self.state.workspace_id
+                ):
+                    yield {
+                        "id": d.get("doc_id"),
+                        "name": d.get("doc_name"),
+                        "createdAt": _parse_dt(d.get("doc_created_at")),
+                        "updatedAt": _parse_dt(d.get("doc_updated_at")),
+                        "workspaceId": d.get("workspace_id"),
+                        "workspaceName": d.get("workspace_name"),
+                        "workspaceAccess": d.get("workspace_access"),
+                        "orgDomain": d.get("org_domain"),
+                    }
+            except Exception as exc:
+                logger.exception(
+                    "list_docs failed for org_id=%s workspace_id=%s",
+                    self.state.org_id,
+                    self.state.workspace_id,
+                )
+                raise ProgrammingError(f"Grist list_docs failed: {exc}") from exc
             return
 
-        # 03) synthetic columns for a doc
+        # ---------- branch: synthetic columns of a table ----------
         if self.state.is_columns:
-            columns = self.client.list_columns(self.state.doc_id, self.state.table_id)  # type: ignore[arg-type]
-            for col in columns:
-                yield {
-                    "id": col.get("id"),
-                    "type": col["fields"].get("type"),
-                    "colRef": col["fields"].get("colRef"),
-                    "parentId": col["fields"].get("parentId"),
-                    "parentPos": col["fields"].get("parentPos"),
-                    "isFormula": col["fields"].get("isFormula"),
-                    "formula": col["fields"].get("formula"),
-                    "label": col["fields"].get("label"),
-                    "description": col["fields"].get("description"),
-                    "untieColIdFromLabel": col["fields"].get("untieColIdFromLabel"),
-                    "summarySourceCol": col["fields"].get("summarySourceCol"),
-                    "displayCol": col["fields"].get("displayCol"),
-                    "visibleCol": col["fields"].get("visibleCol"),
-                    "reverseCol": col["fields"].get("reverseCol"),
-                    "recalcWhen": col["fields"].get("recalcWhen"),
-                }
+            try:
+                for col in self.client.list_columns(self.state.doc_id, self.state.table_id):  # type: ignore[arg-type]
+                    f = col.get("fields", {}) or {}
+                    yield {
+                        "id": col.get("id"),
+                        "type": f.get("type"),
+                        "colRef": f.get("colRef"),
+                        "parentId": f.get("parentId"),
+                        "parentPos": f.get("parentPos"),
+                        "isFormula": f.get("isFormula"),
+                        "formula": f.get("formula"),
+                        "label": f.get("label"),
+                        "description": f.get("description"),
+                        "untieColIdFromLabel": f.get("untieColIdFromLabel"),
+                        "summarySourceCol": f.get("summarySourceCol"),
+                        "displayCol": f.get("displayCol"),
+                        "visibleCol": f.get("visibleCol"),
+                        "reverseCol": f.get("reverseCol"),
+                        "recalcWhen": f.get("recalcWhen"),
+                    }
+            except Exception as exc:
+                logger.exception(
+                    "list_columns failed: doc=%r table=%r",
+                    self.state.doc_id,
+                    self.state.table_id,
+                )
+                raise ProgrammingError(f"Grist list_columns failed: {exc}") from exc
             return
 
-        # 2) Tables listing
+        # ---------- branch: list tables in a doc ----------
         if not self.state.table_id:
-            tables = self.client.list_tables(self.state.doc_id)  # type: ignore[arg-type]
-            for t in tables:
-                yield {
-                    "id": t.get("id"),
-                    "primaryViewId": t["fields"].get("primaryViewId"),
-                    "summarySourceTable": t["fields"].get("summarySourceTable"),
-                    "onDemand": t["fields"].get("onDemand"),
-                    "rawViewSectionRef": t["fields"].get("rawViewSectionRef"),
-                    "recordCardViewSectionRef": t["fields"].get(
-                        "recordCardViewSectionRef"
-                    ),
-                    "tableRef": t["fields"].get("tableRef"),
-                }
+            try:
+                for t in self.client.list_tables(self.state.doc_id):  # type: ignore[arg-type]
+                    f = t.get("fields", {}) or {}
+                    yield {
+                        "id": t.get("id"),
+                        "primaryViewId": f.get("primaryViewId"),
+                        "summarySourceTable": f.get("summarySourceTable"),
+                        "onDemand": f.get("onDemand"),
+                        "rawViewSectionRef": f.get("rawViewSectionRef"),
+                        "recordCardViewSectionRef": f.get("recordCardViewSectionRef"),
+                        "tableRef": f.get("tableRef"),
+                    }
+            except Exception as exc:
+                logger.exception("list_tables failed: doc=%r", self.state.doc_id)
+                raise ProgrammingError(f"Grist list_tables failed: {exc}") from exc
             return
 
-        # 3) Table rows via /records only
-        table_id = self.state.table_id
-        _ = self.get_columns()  # warm the schema cache
-
+        # ---------- branch: rows of a specific table ----------
+        # Warm schema cache and build server-side params.
+        _ = self.get_columns()
         params = self._build_records_params(bounds, order, limit)
-        logger.debug(f"Params= {params}")
+        logger.debug(
+            "Records params (sanitized)=%s",
+            {k: v for k, v in params.items() if k != "filter"},
+        )
 
-        # Stream rows directly from /records; we rely on the server for filtering/sorting/limit.
-        for row in self.client.iter_records(self.state.doc_id, table_id, params=params):  # type: ignore[arg-type]
-            yield self._row_to_python(row)
+        try:
+            for row in self.client.iter_records(self.state.doc_id, self.state.table_id, params=params):  # type: ignore[arg-type]
+                yield self._row_to_python(row)
+        except Exception as exc:
+            logger.exception(
+                "iter_records failed: doc=%r table=%r",
+                self.state.doc_id,
+                self.state.table_id,
+            )
+            raise ProgrammingError(f"Grist /records failed: {exc}") from exc
