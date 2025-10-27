@@ -37,19 +37,20 @@ def map_grist_type(grist_type: str) -> Field:
     if t.startswith("datetime:"):
         return DateTime(order=Order.ANY, filters=[Equal])
     if t == "choice":
-        # choice is a single pick from a set → String likely
+        # choice is a single pick from a set
         return String(order=Order.ANY, filters=[Equal])
     if t == "choicelist":
-        # multiple picks → maybe JSON, or a delimiter-separated string
+        # multiple picks => elements separated by commas and first element a flag 'L'
         return String(order=Order.ANY)
     if t.startswith("ref:"):
-        # pointing to another table → JSON might represent e.g. an ID, or structured
-        # return String(order=Order.ANY, filters=[Equal])
+        # pointing to another table => returns the referenced row ID
         return Reference()
     if t.startswith("reflist:"):
+        # multiple refs => refs separated by commas and first element a flag 'L'
         return ReferenceList()
     if t == "attachments":
-        # attachments are files/images → JSON (maybe with URLs/metadata)
+        # attachments are files/images
+        # ids separated by commas and first element a flag 'L'
         return String(order=Order.ANY, filters=[Equal])
 
     # Safe fallback
