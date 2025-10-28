@@ -1,5 +1,18 @@
 # ⚙️ Configuration
 
+| Key                              | Type    | Default             | Environment / Context        | URI Param       | Notes                                            |
+|----------------------------------|---------|---------------------|------------------------------|------------------|--------------------------------------------------|
+| `grist_cfg.server`              | string  | *required*          | `GRIST_SERVER` env var       | `server`         | Base URL of Grist instance (e.g., `https://docs.getgrist.com`) |
+| `grist_cfg.org_id`              | int     | *required*          | `GRIST_ORG_ID` env var       | `org_id`         | Numeric ID of your Grist organization/workspace |
+| `grist_cfg.api_key`             | string  | *required*          | `GRIST_API_KEY` env var      | `api_key`        | Your personal API key from Grist                  |
+| `cache_cfg.enabled`             | bool    | `False`             |                              | `cache`          | Enable query caching (metadata + records)         |
+| `cache_cfg.metadata_ttl`        | seconds | `300`               |                              | `metadata_ttl`   | Duration until schema metadata is refreshed       |
+| `cache_cfg.records_ttl`         | seconds | `60`                |                              | `records_ttl`    | Duration until row-data is refreshed               |
+| `cache_cfg.backend`             | enum    | `sqlite`            |                              | `backend`        | `sqlite` or `memory`                              |
+| `cache_cfg.filename`            | path    | `cache.sqlite`      |                              | `filename`       | Only for `sqlite` backend: name/path of DB file   |
+| `cachepath`                     | path    | `~/.cache/gristapi` | `CACHEPATH` env var          | `cachepath`      | Base directory for cache files                    |
+
+
 ## 1) Shillelagh **CLI** → `~/.config/shillelagh/gristapi.yaml`
 
 Use a YAML file for defaults. The CLI will pick it up automatically.
@@ -162,7 +175,7 @@ cursor.execute('SELECT * FROM "grist://<DOC>/<TABLE>?records_ttl=10"')
 
 ---
 
-## 3) **Apache Superset** → Database “Engine Parameters”
+## 3) **Apache Superset** → Database "Engine Parameters"
 
 Create a database using the Shillelagh SQLite dialect, then put adapter config in **Engine Parameters** (JSON).
 
@@ -172,7 +185,7 @@ Create a database using the Shillelagh SQLite dialect, then put adapter config i
 shillelagh+safe://
 ```
 
-**Engine Parameters** (Superset UI → Database → Advanced → “Engine parameters”)
+**Engine Parameters** (Advanced → Other → "Engine parameters")
 
 ```json
 {
@@ -308,7 +321,7 @@ SELECT * FROM "grist://<DOC>/<TABLE>?records_ttl=0&metadata_ttl=0";
 
 ## Troubleshooting
 
-* **“cachepath doesn’t work”**
+* **"cachepath doesn’t work"**
   Ensure it’s a directory you can write to. The adapter expands `~`, creates the directory, tests writability, and falls back to `/tmp/gristapi` if needed. Check logs for the chosen path.
 
 * **Permission errors in Docker/K8s**
@@ -340,9 +353,3 @@ FROM "grist://<DOC>/<TABLE>?server=https://grist.example.com&org_id=123&records_
 ```
 
 > Only use URI overrides for quick experiments; for production, prefer `adapter_kwargs`.
-
-## Security tips
-
-* Prefer **environment variables** for `api_key`.
-* In Superset, store secrets in a **secure config** or via your secrets manager; avoid hard-coding in JSON when possible.
-* If `backend="memory"`, the cache file path is ignored (no disk writes).

@@ -40,13 +40,13 @@ def map_grist_type(grist_type: str) -> Field:
         # choice is a single pick from a set
         return String(order=Order.ANY, filters=[Equal])
     if t == "choicelist":
-        # multiple picks => elements separated by commas and first element a flag 'L'
+        # multiple picks →  elements separated by commas and first element a flag 'L'
         return String(order=Order.ANY)
     if t.startswith("ref:"):
-        # pointing to another table => returns the referenced row ID
+        # pointing to another table →  returns the referenced row ID
         return Reference()
     if t.startswith("reflist:"):
-        # multiple refs => refs separated by commas and first element a flag 'L'
+        # multiple refs →  refs separated by commas and first element a flag 'L'
         return ReferenceList()
     if t == "attachments":
         # attachments are files/images

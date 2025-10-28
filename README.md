@@ -4,7 +4,7 @@ A **[Shillelagh](https://github.com/betodealmeida/shillelagh) adapter** for the 
 It lets you query Grist documents and tables with **SQL** via SQLite/SQLAlchemy,  
 ideal for BI tools like [Apache Superset](https://superset.apache.org/).
 
----
+--- 
 
 ## ✨ Features
 
@@ -26,9 +26,13 @@ ideal for BI tools like [Apache Superset](https://superset.apache.org/).
   If you can only see certain tables, columns, or rows in Grist,  
   you’ll see exactly the same restrictions through this adapter.
 
+**Permissions & access**
+> The adapter enforces exactly the same row-, column- and table-level permissions as your Grist API key. All data is retrieved read-only (no INSERT/UPDATE/DELETE).
+> If you cannot access a table in Grist you won’t see it via SQL.
+
 ---
 
-## 🚀 Installation
+## 📦 Installation
 
 ```bash
 pip install shillelagh-gristapi
@@ -48,6 +52,8 @@ pip install -e .[dev]
 
 
 ## ⚙️ Configuration
+
+➡️ See [configuration.md](docs/configuration.md) for full details, examples, defaults, and troubleshooting.
 
 You need a Grist API key.
 
@@ -90,9 +96,7 @@ Override any parameter per query:
 SELECT * FROM "grist://<DOC_ID>/<TABLE_ID>?records_ttl=30&backend=memory";
 ```
 
-➡️ See [configuration.md](docs/configuration.md) for full details, examples, defaults, and troubleshooting.
-
----
+--- 
 
 ## 🧑‍💻 Usage
 
@@ -103,31 +107,17 @@ without writing any HTTP calls or parsing JSON manually.
 
 ### 🖥️ CLI
 
-Default configuration in `~/.config/shillelagh/shillelagh.yaml`:
+Default configuration lives in `~/.config/shillelagh/shillelagh.yaml`:
 
 ```bash
 $ shillelagh
--- ---------------------------------------------------------------------
--- 🌐 Explore your Grist instance via SQL
--- ---------------------------------------------------------------------
--- Each URI corresponds to a Grist REST endpoint exposed as a virtual table.
--- You can use standard SQL (SELECT, WHERE, LIMIT, ORDER BY) from Shillelagh.
-
 -- 1️⃣  List all accessible documents
--- Equivalent to: GET /api/orgs/{orgId}/workspaces/{workspaceId}/docs
--- API reference: https://support.getgrist.com/api/#tag/workspaces/operation/listWorkspaces
 SELECT * FROM "grist://";
 
 -- 2️⃣  List tables inside a specific document
--- Replace <DOC_ID> with your actual document ID (e.g. "doc_abcdef123456").
--- Equivalent to: GET /api/docs/{docId}/tables
--- API reference: https://support.getgrist.com/api/#tag/tables/operation/listTables
 SELECT * FROM "grist://<DOC_ID>";
 
 -- 3️⃣  Fetch all records from a specific table
--- Replace <DOC_ID> and <TABLE_ID> with your actual IDs.
--- Equivalent to: GET /api/docs/{docId}/tables/{tableId}/records
--- API reference: https://support.getgrist.com/api/#tag/records
 SELECT * FROM "grist://<DOC_ID>/<TABLE_ID>";
 
 -- 4️⃣  Example: filtered and limited query (pushdown supported)
@@ -178,6 +168,8 @@ cursor.execute(query).fetchall()
 
 ### 📊 Apache Superset
 
+➡️ See [superset.md](docs/superset.md) for full details and examples.
+
 - Install `shillelagh` + this adapter in your Superset image;
 - Add a Shillelagh database with URI
 ```
@@ -205,7 +197,6 @@ shillelagh+safe://
 select * from 'grist://<DOC_ID>/<TABLE_ID>'
 ```
 
-➡️ See [superset.md](docs/superset.md) for full details and examples.
 
 | SqlAlchemy URI | Engine parameters |
 | --- | --- |

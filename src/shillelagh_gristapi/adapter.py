@@ -347,7 +347,7 @@ class GristAPIAdapter(Adapter):
         segs = [urllib.parse.unquote(p) for p in parsed.path.split("/") if p]
         query_params = urllib.parse.parse_qs(parsed.query)
 
-        # Case 1: Root listing (no netloc) => list available documents
+        # Case 1: Root listing (no netloc) →  list available documents
         if not netloc:
             return None, None, None, query_params
 
@@ -358,11 +358,11 @@ class GristAPIAdapter(Adapter):
         # Case 3: Regular document ID (e.g. grist://doc-xyz123)
         doc_id = netloc
 
-        # No path segments => list tables in that document
+        # No path segments →  list tables in that document
         if len(segs) == 0:
             return doc_id, None, None, query_params
 
-        # Single segment => either a normal table or an internal special tag (__docs__)
+        # Single segment →  either a normal table or an internal special tag (__docs__)
         if len(segs) == 1:
             s0 = segs[0]
             if s0 == SPECIAL_DOCS:
@@ -638,7 +638,7 @@ class GristAPIAdapter(Adapter):
             if isinstance(field, DateTime):
                 parsed_val = _parse_dt(raw)
 
-            # Reference => display via mapped displayed column (if available)
+            # Reference → display via mapped displayed column (if available)
             elif isinstance(field, Reference):
                 display_id = field_to_display.get(col_name)
                 if display_id:
@@ -649,7 +649,7 @@ class GristAPIAdapter(Adapter):
                 else:
                     parsed_val = _join_after_sentinel(raw)
 
-            # ReferenceList => display via mapped displayed column (list-safe)
+            # ReferenceList →  display via mapped displayed column (list-safe)
             elif isinstance(field, ReferenceList):
                 display_id = field_to_display.get(col_name)
                 if display_id:
