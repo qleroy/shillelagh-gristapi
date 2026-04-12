@@ -53,7 +53,9 @@ pip install -e .[dev]
 
 ## ⚙️ Configuration
 
-➡️ See [configuration.md](docs/configuration.md) for full details, examples, defaults, and troubleshooting.
+➡️ See [configuration.md](docs/configuration.md) for full details, examples, defaults, and troubleshooting.  
+➡️ See [api-mapping.md](docs/api-mapping.md) for how Grist types are translated to SQL.  
+➡️ See [limitations.md](docs/limitations.md) for known restrictions and performance notes.
 
 You need a Grist API key.
 
