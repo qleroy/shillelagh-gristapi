@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Iterator, Mapping, Tuple, Optional
+from typing import Any, Dict, Iterable, Iterator, Mapping, Tuple, Optional, Union
 import json
 import logging
 import requests
@@ -51,6 +51,7 @@ class ClientConfig:
     api_key: str
     cache: CacheConfig
     user_agent: str = DEFAULT_USER_AGENT
+    verify: Union[bool, str] = True  # False to skip TLS verification, or path to CA bundle
 
 
 def _freeze(value: Any) -> Any:
@@ -79,6 +80,7 @@ class GristClient:
                 "User-Agent": cfg.user_agent or DEFAULT_USER_AGENT,
             }
         )
+        self.session.verify = cfg.verify
         adapter = _retry_adapter()
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)

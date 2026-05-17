@@ -39,7 +39,7 @@ from dataclasses import dataclass
 import datetime
 from enum import Enum, auto
 import os
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 import urllib
 
 from shillelagh.adapters.base import Adapter
@@ -193,6 +193,10 @@ class GristAPIAdapter(Adapter):
         org_val = _qs_get(query_params, "org_id", base_cfg.get("org_id"))
         key_val = _qs_get(query_params, "api_key", base_cfg.get("api_key"))
 
+        # ---------- resolve TLS verification (grist_cfg > default True) ----------
+        # False to disable (self-signed certs), or a string path to a CA bundle.
+        verify_val: Union[bool, str] = base_cfg.get("verify", True)
+
         if not server_val:
             raise ProgrammingError(
                 "Grist server URL is required (adapter_kwargs['gristapi']['server'])."
@@ -292,7 +296,7 @@ class GristAPIAdapter(Adapter):
         )
 
         self.client = GristClient(
-            ClientConfig(server=server_val, api_key=key_val, cache=cache_config)
+            ClientConfig(server=server_val, api_key=key_val, cache=cache_config, verify=verify_val)
         )
 
         # ---------- lazy schema cache ----------

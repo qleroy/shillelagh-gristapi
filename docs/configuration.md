@@ -7,6 +7,7 @@
 | `grist_cfg.server` | string | *required* | `server` | Base URL of your Grist instance |
 | `grist_cfg.org_id` | int | *required* | `org_id` | Numeric organization ID |
 | `grist_cfg.api_key` | string | *required* | `api_key` | Personal API token from Grist |
+| `grist_cfg.verify` | bool or string | `True` | — | `false` to skip TLS verification (self-signed certs), or path to a CA bundle |
 | `cache_cfg.enabled` | bool | `True` | `enabled` | Enable caching (metadata + records) |
 | `cache_cfg.metadata_ttl` | seconds | `300` | `metadata_ttl` | Schema cache TTL |
 | `cache_cfg.records_ttl` | seconds | `60` | `records_ttl` | Row cache TTL |
