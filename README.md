@@ -139,7 +139,7 @@ from shillelagh.backends.apsw.db import connect
 import os
 
 connection = connect(
-    ":memory:"
+    ":memory:",
     adapter_kwargs={
         "gristapi": {
             "grist_cfg": {

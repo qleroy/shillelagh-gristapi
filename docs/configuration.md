@@ -5,7 +5,7 @@
 | `grist_cfg.server`              | string  | *required*          | `GRIST_SERVER` env var       | `server`         | Base URL of Grist instance (e.g., `https://docs.getgrist.com`) |
 | `grist_cfg.org_id`              | int     | *required*          | `GRIST_ORG_ID` env var       | `org_id`         | Numeric ID of your Grist organization/workspace |
 | `grist_cfg.api_key`             | string  | *required*          | `GRIST_API_KEY` env var      | `api_key`        | Your personal API key from Grist                  |
-| `cache_cfg.enabled`             | bool    | `False`             |                              | `cache`          | Enable query caching (metadata + records)         |
+| `cache_cfg.enabled`             | bool    | `True`              |                              | `cache`          | Enable query caching (metadata + records)         |
 | `cache_cfg.metadata_ttl`        | seconds | `300`               |                              | `metadata_ttl`   | Duration until schema metadata is refreshed       |
 | `cache_cfg.records_ttl`         | seconds | `60`                |                              | `records_ttl`    | Duration until row-data is refreshed               |
 | `cache_cfg.backend`             | enum    | `sqlite`            |                              | `backend`        | `sqlite` or `memory`                              |
