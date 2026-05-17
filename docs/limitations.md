@@ -1,36 +1,103 @@
-# ⚠️ Limitations
+# Limitations
 
-This adapter aims to bridge Grist's REST API and SQL via Shillelagh. However, due to the nature of the API and its current implementation, certain features and performance aspects have limitations.
+## Read-only
 
-## 🔒 Read-Only
-- **No Writing:** The adapter is strictly **read-only**. You cannot use `INSERT`, `UPDATE`, or `DELETE` statements.
-- Any attempt to modify data will result in a `ProgrammingError`.
+The adapter is strictly read-only. `INSERT`, `UPDATE`, and `DELETE` will raise a `ProgrammingError`.
 
-## ⚡ Query Pushdown
-To ensure optimal performance, the adapter tries to "push down" SQL operations to the Grist API whenever possible. If an operation cannot be pushed down, it will be handled **locally** by Shillelagh (fetching all records first).
+## Query pushdown
 
-### Supported Pushdowns
-- **`WHERE` (Equality):** `column = 'value'` or `column IN ('a', 'b')` is pushed down to the API.
-- **`ORDER BY`:** Single or multi-column sorting is pushed down to the API.
-- **`LIMIT`:** The number of records fetched from the API is restricted.
+The adapter pushes operations to the Grist API when possible. Anything not pushed down is evaluated locally — meaning all matching rows are fetched first.
 
-### Not Pushed Down (Processed Locally)
-- **Complex Filters:** `>` , `<`, `LIKE`, or `OR` clauses are evaluated locally after fetching data.
-- **Joins:** SQL `JOIN` statements are processed locally by Shillelagh. This means Shillelagh will fetch all required rows from both tables before joining them.
-- **Aggregations:** `COUNT(*)`, `SUM()`, `GROUP BY` etc., are calculated locally.
-- **Functions:** SQL functions (e.g., `strftime`, `substring`) are executed locally.
+| Operation | Pushed down? |
+|---|---|
+| `WHERE col = 'value'` | Yes |
+| `WHERE col IN ('a', 'b')` | Yes |
+| `ORDER BY` (single or multi-column) | Yes |
+| `LIMIT` | Yes |
+| `WHERE col > value`, `LIKE`, `OR` | No — full fetch, local filter |
+| `JOIN` | No — both tables fetched in full |
+| `COUNT(*)`, `SUM()`, `GROUP BY` | No — local aggregation |
+| SQL functions (`strftime`, etc.) | No — local evaluation |
 
-## 🧩 Complex Types
-- **Attachments:** Only attachment IDs are available. The adapter does not download or process the files themselves.
-- **Reference Lists:** Multiple referenced values are returned as a single comma-separated string.
+## Complex types
 
-## ⏳ Performance & Caching
-- **Rate Limiting:** If you query very large tables or frequently refresh without caching, you might hit Grist API rate limits.
-- **Initial Schema Fetch:** The first time you query a table, the adapter must fetch the column metadata. This is cached (according to `metadata_ttl`) to speed up subsequent queries.
-- **Full Table Scans:** If a query doesn't use equality filters on its `WHERE` clause, Shillelagh will fetch **all** records from the table before filtering them locally. For large Grist tables (e.g., > 10,000 rows), this may be slow.
+- **Attachments:** Only attachment IDs are returned, not the files themselves.
+- **ChoiceList / ReferenceList:** Returned as a comma-separated string.
 
-## 🛠 Troubleshooting Large Queries
-If you find a query is too slow:
-1. Ensure your `WHERE` clauses use `=` or `IN` on indexed columns.
-2. Enable caching (`cache_cfg.enabled = True`) to avoid re-fetching the same data.
-3. Use a smaller `LIMIT` if you only need a sample of the data.
+## Performance
+
+### The key question: is your query pushed down?
+
+A pushed-down query transfers only the rows you need. A non-pushed-down query transfers the entire table and filters locally. This is the single most important factor for large tables.
+
+**Pushed down — fast at any size:**
+```sql
+SELECT * FROM "grist://doc/Table" WHERE status = 'active' LIMIT 100;
+```
+
+**Not pushed down — full table transfer:**
+```sql
+SELECT * FROM "grist://doc/Table" WHERE amount > 1000;
+SELECT * FROM "grist://doc/Table" WHERE name LIKE '%smith%';
+SELECT COUNT(*) FROM "grist://doc/Table";
+```
+
+### Row count heuristics
+
+These are rough guides, not benchmarks — actual speed depends on your network latency, Grist server load, column count, and whether pushdown applies.
+
+| Table size | Pushed-down query | Full table scan |
+|---|---|---|
+| < 1 000 rows | Instant | Instant |
+| 1 000 – 10 000 rows | Instant | Fast (seconds) |
+| 10 000 – 100 000 rows | Fast | Slow (tens of seconds) |
+| > 100 000 rows | Fast | Very slow or timeout |
+
+### Recommendations for large tables
+
+**1. Always filter with `=` or `IN` on a selective column**
+
+```sql
+-- Good: pushes the filter, transfers only matching rows
+SELECT * FROM "grist://doc/Orders" WHERE customer_id = '123';
+
+-- Bad: fetches all rows, filters locally
+SELECT * FROM "grist://doc/Orders" WHERE amount > 500;
+```
+
+If you need range filters on large tables, consider maintaining a filtered or aggregated view directly in Grist and querying that instead.
+
+**2. Use `LIMIT` when exploring**
+
+```sql
+SELECT * FROM "grist://doc/BigTable" LIMIT 100;
+```
+
+`LIMIT` is pushed down to the Grist API, so this transfers at most 100 rows regardless of table size.
+
+**3. Enable and tune the cache**
+
+For dashboards or repeated queries on data that doesn't change often:
+
+```python
+"cache_cfg": {
+    "enabled": True,
+    "records_ttl": 300,   # cache rows for 5 minutes
+    "metadata_ttl": 3600, # cache schema for 1 hour
+    "backend": "sqlite",
+}
+```
+
+The second execution of the same query hits the local cache and returns instantly.
+
+**4. When this adapter is not the right tool**
+
+This adapter is a good fit for:
+- Interactive exploration of Grist data via SQL
+- BI dashboards on tables up to ~50k rows with selective filters
+- Superset charts backed by well-filtered virtual datasets
+
+It is not a good fit for:
+- Real-time analytics on tables with hundreds of thousands of rows and no selective filter
+- Aggregations over full large tables run frequently (every query does a full transfer)
+- ETL pipelines — use the Grist REST API directly instead
