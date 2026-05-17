@@ -34,8 +34,10 @@ This file is read-only by design.
 
 import json
 import logging
+import tempfile
 from dataclasses import dataclass
 import datetime
+from enum import Enum, auto
 import os
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 import urllib
@@ -47,22 +49,22 @@ from shillelagh.filters import Equal
 from shillelagh.typing import RequestedOrder
 
 from .http import ClientConfig, GristClient, CacheConfig
-from .schema import map_grist_type
-from .schema import Reference
-from .schema import ReferenceList
+from .schema import map_grist_type, Reference, ReferenceList
 
 
 GRIST_PREFIX = "grist://"
-SPECIAL_ORGS = "__orgs__"
-SPECIAL_COLUMNS = "__columns__"
-SPECIAL_WORKSPACES = "__workspaces__"
-SPECIAL_DOCS = "__docs__"
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------
-# URI parsing helpers
-# ---------------------------
+class ResourceKind(Enum):
+    """Type of Grist resource addressed by a grist:// URI."""
+
+    ORGS = auto()        # grist://__orgs__
+    WORKSPACES = auto()  # grist://__workspaces__
+    DOCS = auto()        # grist:// or grist://__docs__ or grist://<ws_id>/__docs__
+    TABLES = auto()      # grist://<doc_id>
+    COLUMNS = auto()     # grist://<doc_id>/<table_id>/__columns__
+    RECORDS = auto()     # grist://<doc_id>/<table_id>
 
 
 # ---------------------------
@@ -75,32 +77,10 @@ class _State:
     server: str
     org_id: int
     api_key: str
-    doc_id: Optional[str]
-    workspace_id: Optional[str]
-    table_id: Optional[str]
-    is_orgs: bool = False
-    is_columns: bool = False
-    is_workspaces: bool = False
-    is_docs: bool = False
-
-
-# ---------------------------
-# Backwards compatibility
-# ---------------------------
-def assert_grist_params(
-    grist_cfg: Optional[Dict[str, Any]] = None,
-    server: Optional[str] = None,
-    org_id: Optional[int] = None,
-    api_key: Optional[str] = None,
-):
-    if grist_cfg is not None:
-        pass
-    elif server and org_id and api_key:
-        pass
-    else:
-        raise ValueError(
-            "You must either provide grist_cfg or server + org_id + api_key."
-        )
+    kind: ResourceKind
+    doc_id: Optional[str] = None
+    workspace_id: Optional[str] = None
+    table_id: Optional[str] = None
 
 
 # ---------------------------
@@ -112,8 +92,10 @@ def _parse_dt(v: Any) -> Optional[datetime.datetime]:
     if v in (None, ""):
         return None
     if isinstance(v, int):
-        return datetime.datetime.fromtimestamp(v)
-    return datetime.datetime.strptime(v, "%Y-%m-%dT%H:%M:%S.%fZ")
+        return datetime.datetime.fromtimestamp(v, tz=datetime.timezone.utc)
+    return datetime.datetime.strptime(v, "%Y-%m-%dT%H:%M:%S.%fZ").replace(
+        tzinfo=datetime.timezone.utc
+    )
 
 
 # ---------------------------
@@ -139,9 +121,9 @@ class GristAPIAdapter(Adapter):
 
     def __init__(
         self,
+        resource_kind: ResourceKind,
         doc_id: Optional[str],
         table_id: Optional[str],
-        subresource: Optional[str],
         query_params: Dict[str, Any],
         grist_cfg: Optional[Dict[str, Any]] = None,
         server: Optional[str] = None,  # backward compatibility
@@ -167,8 +149,6 @@ class GristAPIAdapter(Adapter):
         - filename      (cache file name when sqlite; default "grist_cache.sqlite")
         - cachepath     (directory for cache file; default "~/.cache/gristapi")
         """
-        import tempfile
-
         # ---------- small local helpers ----------
         def _qs_get(qs: Dict[str, Any], key: str, default: Any = None) -> Any:
             """Return first value for key from a parse_qs-like dict, else default."""
@@ -205,9 +185,6 @@ class GristAPIAdapter(Adapter):
             return default if parsed is None else parsed
 
         # ---------- validate base config presence (legacy + modern) ----------
-        assert_grist_params(
-            grist_cfg=grist_cfg, server=server, org_id=org_id, api_key=api_key
-        )
         base_cfg = grist_cfg or {"server": server, "org_id": org_id, "api_key": api_key}
         cache_cfg = cache_cfg or {}
 
@@ -238,9 +215,7 @@ class GristAPIAdapter(Adapter):
         records_ttl_val = _get_int_param("records_ttl", 60)
         maxsize_val = _get_int_param("maxsize", 1024)
         backend_val = _get_str_param("backend", "sqlite") or "sqlite"
-        filename_val = (
-            _get_str_param("filename", "cache.sqlite") or "grist_cache.sqlite"
-        )
+        filename_val = _get_str_param("filename", "grist_cache.sqlite") or "grist_cache.sqlite"
 
         # ---------- resolve cache directory with fallbacks and safety ----------
         # Priority: function arg > URI query > cache_cfg > default (~/.cache/gristapi)
@@ -296,22 +271,24 @@ class GristAPIAdapter(Adapter):
             path=full_cache_path,
         )
 
-        # ---------- interpret special modes from URI parts ----------
-        # Workspace-scoped docs listing (non-root): grist://<workspace_id>/__docs__
-        workspace_id = doc_id if table_id == SPECIAL_DOCS else None
-
         # ---------- persist state & bootstrap HTTP client ----------
+        # For DOCS+workspace URIs (grist://<ws_id>/__docs__), parse_uri passes
+        # the workspace ID as doc_id. Promote it to workspace_id here.
+        workspace_id = doc_id if resource_kind is ResourceKind.DOCS else None
+        actual_doc_id = (
+            doc_id
+            if resource_kind not in (ResourceKind.ORGS, ResourceKind.WORKSPACES, ResourceKind.DOCS)
+            else None
+        )
+
         self.state = _State(
             server=server_val,
             org_id=org_val,
             api_key=key_val,
-            doc_id=doc_id,
+            kind=resource_kind,
+            doc_id=actual_doc_id,
             table_id=table_id,
             workspace_id=workspace_id,
-            is_orgs=(doc_id == SPECIAL_ORGS),
-            is_columns=(subresource == SPECIAL_COLUMNS),
-            is_workspaces=(doc_id == SPECIAL_WORKSPACES),
-            is_docs=(doc_id in (None, SPECIAL_DOCS) or table_id == SPECIAL_DOCS),
         )
 
         self.client = GristClient(
@@ -320,6 +297,7 @@ class GristAPIAdapter(Adapter):
 
         # ---------- lazy schema cache ----------
         self._columns: Optional[Dict[str, Field]] = None
+        self._field_to_displayed_col_id: Dict[str, str] = {}
         self._resolved_table_id: str = ""
 
     # -------------
@@ -329,57 +307,49 @@ class GristAPIAdapter(Adapter):
     @staticmethod
     def parse_uri(
         uri: str,
-    ) -> Tuple[Optional[str], Optional[str], Optional[str], Dict[str, Any]]:
+    ) -> Tuple[ResourceKind, Optional[str], Optional[str], Dict[str, Any]]:
         """
-         Parse a grist:// URI into (doc_id, table_id, subresource, query_params).
+        Parse a grist:// URI into (resource_kind, doc_id, table_id, query_params).
 
-        Grammar (netloc = <doc_id> or a special root):
-          grist://                                 -> (None, None, None, q)                 # list docs (root)
-          grist://__orgs__                         -> (SPECIAL_ORGS, None, None, q)         # list orgs
-          grist://__workspaces__                   -> (SPECIAL_WORKSPACES, None, None, q)   # list workspaces
-          grist://__docs__                         -> (SPECIAL_DOCS, None, None, q)         # list docs (alias)
-          grist://<doc_id>                         -> (<doc_id>, None, None, q)             # list tables in doc
-          grist://<doc_id>/<table_id>/__columns__  -> (<doc_id>, <table_id>, SPECIAL_COLUMNS, q) # list columns in table
+          grist://                                -> (DOCS,       None,     None,       q)
+          grist://__orgs__                        -> (ORGS,       None,     None,       q)
+          grist://__workspaces__                  -> (WORKSPACES, None,     None,       q)
+          grist://__docs__                        -> (DOCS,       None,     None,       q)
+          grist://<doc_id>                        -> (TABLES,     doc_id,   None,       q)
+          grist://<ws_id>/__docs__                -> (DOCS,       ws_id,    None,       q)
+          grist://<doc_id>/<table_id>             -> (RECORDS,    doc_id,   table_id,   q)
+          grist://<doc_id>/<table_id>/__columns__ -> (COLUMNS,    doc_id,   table_id,   q)
         """
         parsed = urllib.parse.urlparse(uri)
         netloc = parsed.netloc.strip()
-        # Split and decode the path segments (filter out empty strings)
         segs = [urllib.parse.unquote(p) for p in parsed.path.split("/") if p]
         query_params = urllib.parse.parse_qs(parsed.query)
 
-        # Case 1: Root listing (no netloc) →  list available documents
         if not netloc:
-            return None, None, None, query_params
+            return ResourceKind.DOCS, None, None, query_params
 
-        # Case 2: Special root resources (__orgs__, __workspaces__, __docs__)
-        if netloc in (SPECIAL_ORGS, SPECIAL_WORKSPACES, SPECIAL_DOCS):
-            return netloc, None, None, query_params
+        if netloc == "__orgs__":
+            return ResourceKind.ORGS, None, None, query_params
+        if netloc == "__workspaces__":
+            return ResourceKind.WORKSPACES, None, None, query_params
+        if netloc == "__docs__":
+            return ResourceKind.DOCS, None, None, query_params
 
-        # Case 3: Regular document ID (e.g. grist://doc-xyz123)
         doc_id = netloc
 
-        # No path segments →  list tables in that document
-        if len(segs) == 0:
-            return doc_id, None, None, query_params
+        if not segs:
+            return ResourceKind.TABLES, doc_id, None, query_params
 
-        # Single segment →  either a normal table or an internal special tag (__docs__)
         if len(segs) == 1:
-            s0 = segs[0]
-            if s0 == SPECIAL_DOCS:
-                # Some users may use grist://<workspace_id>/__docs__ (list docs for a workspace)
-                # Only makes sense if <doc_id> is actually a workspace_id.
-                return doc_id, s0, None, query_params
-            return doc_id, s0, None, query_params
+            if segs[0] == "__docs__":
+                # grist://<ws_id>/__docs__ — workspace-scoped doc listing
+                return ResourceKind.DOCS, doc_id, None, query_params
+            return ResourceKind.RECORDS, doc_id, segs[0], query_params
 
-        # Multiple segments:
-        # If the last one is __columns__, treat everything before it as the table_id.
-        if segs[-1] == SPECIAL_COLUMNS:
-            table_id = "/".join(segs[:-1])
-            return doc_id, table_id, SPECIAL_COLUMNS, query_params
+        if segs[-1] == "__columns__":
+            return ResourceKind.COLUMNS, doc_id, "/".join(segs[:-1]), query_params
 
-        # Otherwise, rejoin everything as a (possibly nested) table identifier.
-        table_id = "/".join(segs)
-        return doc_id, table_id, None, query_params
+        return ResourceKind.RECORDS, doc_id, "/".join(segs), query_params
 
     @staticmethod
     def supports(uri: str, fast: bool = True, **kwargs: Any) -> bool:
@@ -403,7 +373,7 @@ class GristAPIAdapter(Adapter):
         """
 
         # ---- Synthetic: organizations ----
-        if self.state.is_orgs:
+        if self.state.kind is ResourceKind.ORGS:
             return {
                 "id": String(),
                 "name": String(),
@@ -414,7 +384,7 @@ class GristAPIAdapter(Adapter):
             }
 
         # ---- Synthetic: workspaces ----
-        if self.state.is_workspaces:
+        if self.state.kind is ResourceKind.WORKSPACES:
             return {
                 "id": String(),
                 "name": String(),
@@ -425,7 +395,7 @@ class GristAPIAdapter(Adapter):
             }
 
         # ---- Synthetic: docs listing (root / __docs__) ----
-        if self.state.is_docs:
+        if self.state.kind is ResourceKind.DOCS:
             return {
                 "id": String(),
                 "name": String(),
@@ -438,7 +408,7 @@ class GristAPIAdapter(Adapter):
             }
 
         # ---- Synthetic: list columns for a given table ----
-        if self.state.is_columns:
+        if self.state.kind is ResourceKind.COLUMNS:
             return {
                 "id": String(),
                 "type": String(),
@@ -452,13 +422,13 @@ class GristAPIAdapter(Adapter):
                 "untieColIdFromLabel": Boolean(),
                 "summarySourceCol": Integer(),
                 "displayCol": Integer(),
-                "visibleCol": Boolean(),
+                "visibleCol": Integer(),
                 "reverseCol": Integer(),
                 "recalcWhen": Integer(),
             }
 
         # ---- Synthetic: list tables in a doc ----
-        if not self.state.table_id:
+        if self.state.kind is ResourceKind.TABLES:
             return {
                 "id": String(),
                 "primaryViewId": Integer(),
@@ -544,7 +514,7 @@ class GristAPIAdapter(Adapter):
         # Cache results
         self._columns = schema
         # Store the mapping for Reference / ReferenceList rendering path
-        self._field_to_displayed_col_id = field_to_displayed_col_id  # type: ignore[attr-defined]
+        self._field_to_displayed_col_id = field_to_displayed_col_id
 
         return self._columns
 
@@ -612,8 +582,7 @@ class GristAPIAdapter(Adapter):
         Safe against None and non-list payloads returned by the API.
         """
 
-        # guard in case mapping wasn't initialized yet
-        field_to_display = getattr(self, "_field_to_displayed_col_id", {}) or {}
+        field_to_display = self._field_to_displayed_col_id
 
         def _join_after_sentinel(value: Any) -> Optional[str]:
             """
@@ -638,19 +607,8 @@ class GristAPIAdapter(Adapter):
             if isinstance(field, DateTime):
                 parsed_val = _parse_dt(raw)
 
-            # Reference → display via mapped displayed column (if available)
-            elif isinstance(field, Reference):
-                display_id = field_to_display.get(col_name)
-                if display_id:
-                    parsed_val = _join_after_sentinel(row.get(display_id))
-                    # fallback to raw if display is missing/empty
-                    if parsed_val is None:
-                        parsed_val = _join_after_sentinel(raw)
-                else:
-                    parsed_val = _join_after_sentinel(raw)
-
-            # ReferenceList →  display via mapped displayed column (list-safe)
-            elif isinstance(field, ReferenceList):
+            # Reference / ReferenceList → display via mapped displayed column (if available)
+            elif isinstance(field, (Reference, ReferenceList)):
                 display_id = field_to_display.get(col_name)
                 if display_id:
                     parsed_val = _join_after_sentinel(row.get(display_id))
@@ -698,7 +656,7 @@ class GristAPIAdapter(Adapter):
             return out
 
         # ---------- branch: synthetic resources ----------
-        if self.state.is_orgs:
+        if self.state.kind is ResourceKind.ORGS:
             try:
                 for org in self.client.list_orgs():
                     yield _sanitize_fields(
@@ -717,7 +675,7 @@ class GristAPIAdapter(Adapter):
                 raise ProgrammingError(f"Grist list_orgs failed: {exc}") from exc
             return
 
-        if self.state.is_workspaces:
+        if self.state.kind is ResourceKind.WORKSPACES:
             try:
                 for ws in self.client.list_workspaces(self.state.org_id):
                     yield _sanitize_fields(
@@ -739,11 +697,7 @@ class GristAPIAdapter(Adapter):
             return
 
         # Docs listing (root / __docs__)
-        if self.state.is_docs:
-            if self.state.org_id is None:
-                raise ProgrammingError(
-                    "org_id is required in adapter_kwargs['gristapi'] to list docs"
-                )
+        if self.state.kind is ResourceKind.DOCS:
             try:
                 for d in self.client.list_docs(
                     self.state.org_id, self.state.workspace_id
@@ -768,7 +722,7 @@ class GristAPIAdapter(Adapter):
             return
 
         # ---------- branch: synthetic columns of a table ----------
-        if self.state.is_columns:
+        if self.state.kind is ResourceKind.COLUMNS:
             try:
                 for col in self.client.list_columns(self.state.doc_id, self.state.table_id):  # type: ignore[arg-type]
                     f = col.get("fields", {}) or {}
@@ -799,7 +753,7 @@ class GristAPIAdapter(Adapter):
             return
 
         # ---------- branch: list tables in a doc ----------
-        if not self.state.table_id:
+        if self.state.kind is ResourceKind.TABLES:
             try:
                 for t in self.client.list_tables(self.state.doc_id):  # type: ignore[arg-type]
                     f = t.get("fields", {}) or {}
@@ -827,7 +781,9 @@ class GristAPIAdapter(Adapter):
         )
 
         try:
-            for row in self.client.iter_records(self.state.doc_id, self.state.table_id, params=params):  # type: ignore[arg-type]
+            for row in self.client.iter_records(
+                self.state.doc_id, self.state.table_id, params=params
+            ):  # type: ignore[arg-type]
                 yield self._row_to_python(row)
         except Exception as exc:
             logger.exception(

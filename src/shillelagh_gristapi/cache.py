@@ -44,7 +44,7 @@ class MemoryCache:
         now = time.time()
         with self._lock:
             item = self._data.get(key)
-            if not item:
+            if item is None:
                 self._misses += 1
                 return None
             expires_at, value = item

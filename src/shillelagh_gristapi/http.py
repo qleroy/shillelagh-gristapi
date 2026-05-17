@@ -17,7 +17,7 @@ DEFAULT_TIMEOUT = 10  # seconds
 DEFAULT_USER_AGENT = "shillelagh-gristapi/dev"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CacheConfig:
     enabled: bool = True
     metadata_ttl: int = 300  # seconds for orgs/workspaces/tables/columns
@@ -32,7 +32,7 @@ def _retry_adapter(timeout: int = DEFAULT_TIMEOUT) -> HTTPAdapter:
         total=5,
         backoff_factor=0.5,
         status_forcelist={429, 500, 502, 503, 504},
-        allowed_methods={"GET", "POST", "PATCH", "DELETE"},
+        allowed_methods={"GET"},
         respect_retry_after_header=True,
         raise_on_status=False,
     )
@@ -45,7 +45,7 @@ def _retry_adapter(timeout: int = DEFAULT_TIMEOUT) -> HTTPAdapter:
     return TimeoutAdapter(max_retries=retry)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ClientConfig:
     server: str
     api_key: str
@@ -69,13 +69,8 @@ class GristClient:
     """
 
     def __init__(self, cfg: ClientConfig):
-        server = cfg.server.rstrip("/")
-        self.cfg = ClientConfig(
-            server=server,
-            api_key=cfg.api_key,
-            user_agent=cfg.user_agent,
-            cache=cfg.cache,
-        )
+        self.cfg = cfg
+        self._base_url = cfg.server.rstrip("/")
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -125,7 +120,7 @@ class GristClient:
 
     # --- helpers ---
     def _url(self, path: str) -> str:
-        return f"{self.cfg.server}{path}"
+        return f"{self._base_url}{path}"
 
     # --- API methods ---
     def list_orgs(
@@ -279,7 +274,7 @@ class GristClient:
         if cached is not None:
             return cached
 
-        q = dict()
+        q = {}
         if hidden:
             q["hidden"] = "true"
         else:
@@ -337,10 +332,6 @@ class GristClient:
         filt = q.get("filter")
         if isinstance(filt, Mapping):
             q["filter"] = json.dumps(dict(filt))  # ensure plain dict before dumps
-
-        # If sorting by manualSort, hidden columns are often required
-        if "manualSort" in str(q.get("sort", "")) and "hidden" not in q:
-            q["hidden"] = True
 
         # Unless caller explicitly set a limit, fetch all rows
         q.setdefault("limit", 0)  # 0 = no limit per Grist API
