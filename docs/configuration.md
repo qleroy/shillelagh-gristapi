@@ -18,7 +18,7 @@
 
 ## 1) Shillelagh CLI
 
-Add credentials to `~/.config/shillelagh/gristapi.yaml`:
+Add credentials to `~/.config/shillelagh/shillelagh.yaml`:
 
 ```yaml
 gristapi:

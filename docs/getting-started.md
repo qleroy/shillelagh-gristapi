@@ -90,7 +90,7 @@ Equality `WHERE` clauses, `ORDER BY`, and `LIMIT` are sent directly to the Grist
 
 ## CLI usage
 
-Add your credentials to `~/.config/shillelagh/gristapi.yaml`:
+Add your credentials to `~/.config/shillelagh/shillelagh.yaml`:
 
 ```yaml
 gristapi:
