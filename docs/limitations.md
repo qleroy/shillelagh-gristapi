@@ -32,7 +32,16 @@ A pushed-down query transfers only the rows you need. A non-pushed-down query tr
 
 **Pushed down — fast at any size:**
 ```sql
+-- Single value equality
 SELECT * FROM "grist://doc/Table" WHERE status = 'active' LIMIT 100;
+
+-- Multi-value IN — also pushed down, transfers only matching rows
+SELECT * FROM "grist://doc/Orders" WHERE country IN ('FR', 'DE', 'ES');
+
+-- Combined: equality + IN + LIMIT, all pushed down
+SELECT id, name FROM "grist://doc/Contacts"
+WHERE status = 'active' AND region IN ('EU', 'APAC')
+LIMIT 500;
 ```
 
 **Not pushed down — full table transfer:**
@@ -58,10 +67,13 @@ These are rough guides, not benchmarks — actual speed depends on your network 
 **1. Always filter with `=` or `IN` on a selective column**
 
 ```sql
--- Good: pushes the filter, transfers only matching rows
+-- Good: equality pushed down
 SELECT * FROM "grist://doc/Orders" WHERE customer_id = '123';
 
--- Bad: fetches all rows, filters locally
+-- Good: IN pushed down — only matching rows transferred
+SELECT * FROM "grist://doc/Orders" WHERE status IN ('pending', 'processing');
+
+-- Bad: range filter fetches all rows, filters locally
 SELECT * FROM "grist://doc/Orders" WHERE amount > 500;
 ```
 
