@@ -121,7 +121,7 @@ class GristAPIAdapter(Adapter):
 
     def __init__(
         self,
-        resource_kind: ResourceKind,
+        resource_kind: Union[str, ResourceKind],
         doc_id: Optional[str],
         table_id: Optional[str],
         query_params: Dict[str, Any],
@@ -149,6 +149,11 @@ class GristAPIAdapter(Adapter):
         - filename      (cache file name when sqlite; default "grist_cache.sqlite")
         - cachepath     (directory for cache file; default "~/.cache/gristapi")
         """
+        # Shillelagh serializes parse_uri return values as basic types,
+        # so resource_kind arrives as a string (enum name). Convert it back.
+        if isinstance(resource_kind, str):
+            resource_kind = ResourceKind[resource_kind]
+
         # ---------- small local helpers ----------
         def _qs_get(qs: Dict[str, Any], key: str, default: Any = None) -> Any:
             """Return first value for key from a parse_qs-like dict, else default."""
@@ -311,18 +316,21 @@ class GristAPIAdapter(Adapter):
     @staticmethod
     def parse_uri(
         uri: str,
-    ) -> Tuple[ResourceKind, Optional[str], Optional[str], Dict[str, Any]]:
+    ) -> Tuple[str, Optional[str], Optional[str], Dict[str, Any]]:
         """
         Parse a grist:// URI into (resource_kind, doc_id, table_id, query_params).
 
-          grist://                                -> (DOCS,       None,     None,       q)
-          grist://__orgs__                        -> (ORGS,       None,     None,       q)
-          grist://__workspaces__                  -> (WORKSPACES, None,     None,       q)
-          grist://__docs__                        -> (DOCS,       None,     None,       q)
-          grist://<doc_id>                        -> (TABLES,     doc_id,   None,       q)
-          grist://<ws_id>/__docs__                -> (DOCS,       ws_id,    None,       q)
-          grist://<doc_id>/<table_id>             -> (RECORDS,    doc_id,   table_id,   q)
-          grist://<doc_id>/<table_id>/__columns__ -> (COLUMNS,    doc_id,   table_id,   q)
+        resource_kind is returned as a string (ResourceKind.name) so that
+        Shillelagh can serialize it as a basic type when registering the adapter.
+
+          grist://                                -> ("DOCS",       None,     None,       q)
+          grist://__orgs__                        -> ("ORGS",       None,     None,       q)
+          grist://__workspaces__                  -> ("WORKSPACES", None,     None,       q)
+          grist://__docs__                        -> ("DOCS",       None,     None,       q)
+          grist://<doc_id>                        -> ("TABLES",     doc_id,   None,       q)
+          grist://<ws_id>/__docs__                -> ("DOCS",       ws_id,    None,       q)
+          grist://<doc_id>/<table_id>             -> ("RECORDS",    doc_id,   table_id,   q)
+          grist://<doc_id>/<table_id>/__columns__ -> ("COLUMNS",    doc_id,   table_id,   q)
         """
         parsed = urllib.parse.urlparse(uri)
         netloc = parsed.netloc.strip()
@@ -330,30 +338,30 @@ class GristAPIAdapter(Adapter):
         query_params = urllib.parse.parse_qs(parsed.query)
 
         if not netloc:
-            return ResourceKind.DOCS, None, None, query_params
+            return ResourceKind.DOCS.name, None, None, query_params
 
         if netloc == "__orgs__":
-            return ResourceKind.ORGS, None, None, query_params
+            return ResourceKind.ORGS.name, None, None, query_params
         if netloc == "__workspaces__":
-            return ResourceKind.WORKSPACES, None, None, query_params
+            return ResourceKind.WORKSPACES.name, None, None, query_params
         if netloc == "__docs__":
-            return ResourceKind.DOCS, None, None, query_params
+            return ResourceKind.DOCS.name, None, None, query_params
 
         doc_id = netloc
 
         if not segs:
-            return ResourceKind.TABLES, doc_id, None, query_params
+            return ResourceKind.TABLES.name, doc_id, None, query_params
 
         if len(segs) == 1:
             if segs[0] == "__docs__":
                 # grist://<ws_id>/__docs__ — workspace-scoped doc listing
-                return ResourceKind.DOCS, doc_id, None, query_params
-            return ResourceKind.RECORDS, doc_id, segs[0], query_params
+                return ResourceKind.DOCS.name, doc_id, None, query_params
+            return ResourceKind.RECORDS.name, doc_id, segs[0], query_params
 
         if segs[-1] == "__columns__":
-            return ResourceKind.COLUMNS, doc_id, "/".join(segs[:-1]), query_params
+            return ResourceKind.COLUMNS.name, doc_id, "/".join(segs[:-1]), query_params
 
-        return ResourceKind.RECORDS, doc_id, "/".join(segs), query_params
+        return ResourceKind.RECORDS.name, doc_id, "/".join(segs), query_params
 
     @staticmethod
     def supports(uri: str, fast: bool = True, **kwargs: Any) -> bool:

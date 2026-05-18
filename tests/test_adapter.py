@@ -72,37 +72,37 @@ class TestParseDt:
 class TestParseUri:
     def test_root_listing(self):
         kind, doc_id, table_id, _ = GristAPIAdapter.parse_uri("grist://")
-        assert kind is ResourceKind.DOCS
+        assert kind == "DOCS"
         assert doc_id is None
         assert table_id is None
 
     def test_orgs(self):
         kind, doc_id, table_id, _ = GristAPIAdapter.parse_uri("grist://__orgs__")
-        assert kind is ResourceKind.ORGS
+        assert kind == "ORGS"
         assert doc_id is None
         assert table_id is None
 
     def test_workspaces(self):
         kind, doc_id, table_id, _ = GristAPIAdapter.parse_uri("grist://__workspaces__")
-        assert kind is ResourceKind.WORKSPACES
+        assert kind == "WORKSPACES"
         assert doc_id is None
         assert table_id is None
 
     def test_docs_alias(self):
         kind, doc_id, table_id, _ = GristAPIAdapter.parse_uri("grist://__docs__")
-        assert kind is ResourceKind.DOCS
+        assert kind == "DOCS"
         assert doc_id is None
         assert table_id is None
 
     def test_doc_only(self):
         kind, doc_id, table_id, _ = GristAPIAdapter.parse_uri("grist://docABC123")
-        assert kind is ResourceKind.TABLES
+        assert kind == "TABLES"
         assert doc_id == "docABC123"
         assert table_id is None
 
     def test_doc_and_table(self):
         kind, doc_id, table_id, _ = GristAPIAdapter.parse_uri("grist://docABC123/MyTable")
-        assert kind is ResourceKind.RECORDS
+        assert kind == "RECORDS"
         assert doc_id == "docABC123"
         assert table_id == "MyTable"
 
@@ -110,13 +110,13 @@ class TestParseUri:
         kind, doc_id, table_id, _ = GristAPIAdapter.parse_uri(
             "grist://docABC123/MyTable/__columns__"
         )
-        assert kind is ResourceKind.COLUMNS
+        assert kind == "COLUMNS"
         assert doc_id == "docABC123"
         assert table_id == "MyTable"
 
     def test_workspace_scoped_docs(self):
         kind, doc_id, table_id, _ = GristAPIAdapter.parse_uri("grist://ws42/__docs__")
-        assert kind is ResourceKind.DOCS
+        assert kind == "DOCS"
         assert doc_id == "ws42"
         assert table_id is None
 
