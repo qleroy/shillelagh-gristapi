@@ -1,8 +1,33 @@
-from typing import Optional
+from typing import Any, List, Optional, Set, Tuple
 
 from shillelagh.fields import Boolean, DateTime, Float, Integer, String
 from shillelagh.fields import Field, Order
-from shillelagh.filters import Equal
+from shillelagh.filters import Equal, Filter, Operator
+
+
+class IsIn(Filter):
+    """
+    Multi-value equality filter.
+
+    Handles both single-value (WHERE col = 'x') and multi-value
+    (WHERE col IN ('x', 'y')) equality constraints, mapping them to
+    Grist's filter parameter: {"col": ["x", "y"]}.
+    """
+
+    operators: Set[Operator] = {Operator.EQ}
+
+    def __init__(self, values: List[Any]) -> None:
+        self.values = values
+
+    @classmethod
+    def build(cls, operations: Set[Tuple[Operator, Any]]) -> "IsIn":
+        return cls([value for _, value in operations])
+
+    def check(self, value: Any) -> bool:
+        return value in self.values
+
+    def __repr__(self) -> str:
+        return f"IN {self.values!r}"
 
 
 class Reference(Field[str, str]):
@@ -25,33 +50,28 @@ def map_grist_type(grist_type: str) -> Field:
     t = grist_type.strip().lower()
 
     if t == "text":
-        return String(order=Order.ANY, filters=[Equal])
+        return String(order=Order.ANY, filters=[IsIn])
     if t == "numeric":
-        return Float(order=Order.ANY, filters=[Equal])
+        return Float(order=Order.ANY, filters=[IsIn])
     if t.startswith("int"):
-        return Integer(order=Order.ANY, filters=[Equal])
+        return Integer(order=Order.ANY, filters=[IsIn])
     if t == "bool":
-        return Boolean(order=Order.ANY, filters=[Equal])
+        return Boolean(order=Order.ANY, filters=[IsIn])
     if t == "date":
-        return DateTime(order=Order.ANY, filters=[Equal])
+        return DateTime(order=Order.ANY, filters=[IsIn])
     if t.startswith("datetime:"):
-        return DateTime(order=Order.ANY, filters=[Equal])
+        return DateTime(order=Order.ANY, filters=[IsIn])
     if t == "choice":
-        # choice is a single pick from a set
-        return String(order=Order.ANY, filters=[Equal])
+        return String(order=Order.ANY, filters=[IsIn])
     if t == "choicelist":
-        # multiple picks →  elements separated by commas and first element a flag 'L'
+        # multiple picks — elements separated by commas; no server-side filter support
         return String(order=Order.ANY)
     if t.startswith("ref:"):
-        # pointing to another table →  returns the referenced row ID
         return Reference()
     if t.startswith("reflist:"):
-        # multiple refs →  refs separated by commas and first element a flag 'L'
         return ReferenceList()
     if t == "attachments":
-        # attachments are files/images
-        # ids separated by commas and first element a flag 'L'
-        return String(order=Order.ANY, filters=[Equal])
+        return String(order=Order.ANY, filters=[IsIn])
 
     # Safe fallback
     return String()

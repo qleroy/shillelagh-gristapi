@@ -1,8 +1,9 @@
 """Tests for Grist type → Shillelagh field mapping."""
 import pytest
 from shillelagh.fields import Boolean, DateTime, Float, Integer, String
+from shillelagh.filters import Operator
 
-from shillelagh_gristapi.schema import Reference, ReferenceList, map_grist_type
+from shillelagh_gristapi.schema import IsIn, Reference, ReferenceList, map_grist_type
 
 
 @pytest.mark.parametrize(
@@ -65,3 +66,32 @@ def test_referencelist_field_types():
     ref = ReferenceList()
     assert ref.type == "TEXT"
     assert ref.db_api_type == "TEXT"
+
+
+class TestIsIn:
+    def test_build_single_value(self):
+        f = IsIn.build({(Operator.EQ, "FR")})
+        assert f.values == ["FR"]
+
+    def test_build_multiple_values(self):
+        f = IsIn.build({(Operator.EQ, "FR"), (Operator.EQ, "DE")})
+        assert set(f.values) == {"FR", "DE"}
+
+    def test_check_matching(self):
+        f = IsIn(["FR", "DE"])
+        assert f.check("FR") is True
+        assert f.check("DE") is True
+
+    def test_check_not_matching(self):
+        f = IsIn(["FR", "DE"])
+        assert f.check("US") is False
+
+    def test_operators_set(self):
+        assert Operator.EQ in IsIn.operators
+
+    def test_repr(self):
+        assert "FR" in repr(IsIn(["FR", "DE"]))
+
+    def test_map_grist_type_uses_isin(self):
+        field = map_grist_type("Text")
+        assert any(cls is IsIn for cls in field.filters)

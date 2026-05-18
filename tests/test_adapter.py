@@ -199,6 +199,32 @@ class TestBuildRecordsParams:
         assert params["sort"] == "-id"
         assert params["limit"] == 10
 
+    def test_isin_single_value(self):
+        from shillelagh_gristapi.schema import IsIn
+
+        params = GristAPIAdapter._build_records_params(
+            {"country": IsIn(["FR"])}, [], None
+        )
+        assert json.loads(params["filter"]) == {"country": ["FR"]}
+
+    def test_isin_multiple_values(self):
+        from shillelagh_gristapi.schema import IsIn
+
+        params = GristAPIAdapter._build_records_params(
+            {"country": IsIn(["FR", "DE", "ES"])}, [], None
+        )
+        assert json.loads(params["filter"]) == {"country": ["FR", "DE", "ES"]}
+
+    def test_isin_multiple_columns(self):
+        from shillelagh_gristapi.schema import IsIn
+
+        params = GristAPIAdapter._build_records_params(
+            {"status": IsIn(["active", "pending"]), "region": IsIn(["EU"])}, [], None
+        )
+        f = json.loads(params["filter"])
+        assert set(f["status"]) == {"active", "pending"}
+        assert f["region"] == ["EU"]
+
     def test_unsupported_filter_raises(self):
         from shillelagh.filters import Filter
 

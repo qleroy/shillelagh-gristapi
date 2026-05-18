@@ -45,11 +45,11 @@ import urllib
 from shillelagh.adapters.base import Adapter
 from shillelagh.exceptions import ProgrammingError
 from shillelagh.fields import Field, String, Integer, DateTime, Boolean, Float
-from shillelagh.filters import Equal
+from shillelagh.filters import Equal, Filter
 from shillelagh.typing import RequestedOrder
 
 from .http import ClientConfig, GristClient, CacheConfig
-from .schema import map_grist_type, Reference, ReferenceList
+from .schema import map_grist_type, Reference, ReferenceList, IsIn
 
 
 GRIST_PREFIX = "grist://"
@@ -556,10 +556,11 @@ class GristAPIAdapter(Adapter):
         # Validate and build filter
         filter_obj: Dict[str, Any] = {}
         for col, f in (bounds or {}).items():
-            if isinstance(f, Equal):
+            if isinstance(f, IsIn):
+                filter_obj[col] = f.values
+            elif isinstance(f, Equal):
                 filter_obj[col] = [f.value]
             else:
-                # Unknown filter types are not supported
                 raise ProgrammingError(
                     f"Unsupported filter type for column {col!r}: {type(f).__name__}"
                 )
