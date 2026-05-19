@@ -82,12 +82,6 @@ class TestParseUri:
         assert doc_id is None
         assert table_id is None
 
-    def test_workspaces(self):
-        kind, doc_id, table_id, _ = GristAPIAdapter.parse_uri("grist://__workspaces__")
-        assert kind == "WORKSPACES"
-        assert doc_id is None
-        assert table_id is None
-
     def test_docs_alias(self):
         kind, doc_id, table_id, _ = GristAPIAdapter.parse_uri("grist://__docs__")
         assert kind == "DOCS"
@@ -246,13 +240,6 @@ class TestGetColumnsSynthetic:
         cols = adapter.get_columns()
         assert set(cols) == {"id", "name", "createdAt", "updatedAt", "domain", "access"}
 
-    def test_workspaces_schema(self, tmp_path):
-        adapter = make_adapter(tmp_path, ResourceKind.WORKSPACES)
-        cols = adapter.get_columns()
-        assert "id" in cols
-        assert "name" in cols
-        assert "orgDomain" in cols
-
     def test_docs_schema_root(self, tmp_path):
         adapter = make_adapter(tmp_path, ResourceKind.DOCS)
         cols = adapter.get_columns()
@@ -330,22 +317,6 @@ class TestGetRowsSynthetic:
         assert len(rows) == 1
         assert rows[0]["name"] == "MyOrg"
         assert rows[0]["domain"] == "myorg"
-
-    def test_get_rows_workspaces(self, tmp_path):
-        adapter = make_adapter(tmp_path, ResourceKind.WORKSPACES)
-        adapter.client.list_workspaces.return_value = [
-            {
-                "id": 10,
-                "name": "WS1",
-                "createdAt": None,
-                "updatedAt": None,
-                "orgDomain": "myorg",
-                "access": "owners",
-            }
-        ]
-        rows = list(adapter.get_rows({}, []))
-        assert rows[0]["name"] == "WS1"
-        assert rows[0]["orgDomain"] == "myorg"
 
     def test_get_rows_docs_root(self, tmp_path):
         adapter = make_adapter(tmp_path, ResourceKind.DOCS)

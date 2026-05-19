@@ -6,9 +6,9 @@ GristAPIAdapter
 A minimal, read-only Shillelagh adapter that exposes the Grist REST API as
 virtual tables using a custom URI scheme:
 
-  - grist://                       -> list docs
-  - grist://<doc_id>               -> list tables in doc
-  - grist://<doc_id>/<table_id>  -> rows of a specific table
+  - grist://                      -> list docs
+  - grist://<doc_id>              -> list tables in doc
+  - grist://<doc_id>/<table_id>   -> rows of a specific table
 
 This adapter intentionally separates:
   * discovery/listing (docs, tables) with synthetic two-column schemas
@@ -60,7 +60,6 @@ class ResourceKind(Enum):
     """Type of Grist resource addressed by a grist:// URI."""
 
     ORGS = auto()        # grist://__orgs__
-    WORKSPACES = auto()  # grist://__workspaces__
     DOCS = auto()        # grist:// or grist://__docs__ or grist://<ws_id>/__docs__
     TABLES = auto()      # grist://<doc_id>
     COLUMNS = auto()     # grist://<doc_id>/<table_id>/__columns__
@@ -286,7 +285,7 @@ class GristAPIAdapter(Adapter):
         workspace_id = doc_id if resource_kind is ResourceKind.DOCS else None
         actual_doc_id = (
             doc_id
-            if resource_kind not in (ResourceKind.ORGS, ResourceKind.WORKSPACES, ResourceKind.DOCS)
+            if resource_kind not in (ResourceKind.ORGS, ResourceKind.DOCS)
             else None
         )
 
@@ -325,7 +324,6 @@ class GristAPIAdapter(Adapter):
 
           grist://                                -> ("DOCS",       None,     None,       q)
           grist://__orgs__                        -> ("ORGS",       None,     None,       q)
-          grist://__workspaces__                  -> ("WORKSPACES", None,     None,       q)
           grist://__docs__                        -> ("DOCS",       None,     None,       q)
           grist://<doc_id>                        -> ("TABLES",     doc_id,   None,       q)
           grist://<ws_id>/__docs__                -> ("DOCS",       ws_id,    None,       q)
@@ -342,8 +340,6 @@ class GristAPIAdapter(Adapter):
 
         if netloc == "__orgs__":
             return ResourceKind.ORGS.name, None, None, query_params
-        if netloc == "__workspaces__":
-            return ResourceKind.WORKSPACES.name, None, None, query_params
         if netloc == "__docs__":
             return ResourceKind.DOCS.name, None, None, query_params
 
@@ -392,17 +388,6 @@ class GristAPIAdapter(Adapter):
                 "createdAt": DateTime(),
                 "updatedAt": DateTime(),
                 "domain": String(),
-                "access": String(),
-            }
-
-        # ---- Synthetic: workspaces ----
-        if self.state.kind is ResourceKind.WORKSPACES:
-            return {
-                "id": String(),
-                "name": String(),
-                "createdAt": DateTime(),
-                "updatedAt": DateTime(),
-                "orgDomain": String(),
                 "access": String(),
             }
 
@@ -686,27 +671,6 @@ class GristAPIAdapter(Adapter):
             except Exception as exc:
                 logger.exception("list_orgs failed")
                 raise ProgrammingError(f"Grist list_orgs failed: {exc}") from exc
-            return
-
-        if self.state.kind is ResourceKind.WORKSPACES:
-            try:
-                for ws in self.client.list_workspaces(self.state.org_id):
-                    yield _sanitize_fields(
-                        ws,
-                        {
-                            "id": "id",
-                            "name": "name",
-                            "createdAt": "createdAt",
-                            "updatedAt": "updatedAt",
-                            "orgDomain": "orgDomain",
-                            "access": "access",
-                        },
-                    )
-            except Exception as exc:
-                logger.exception(
-                    "list_workspaces failed for org_id=%s", self.state.org_id
-                )
-                raise ProgrammingError(f"Grist list_workspaces failed: {exc}") from exc
             return
 
         # Docs listing (root / __docs__)

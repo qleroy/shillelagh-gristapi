@@ -47,7 +47,6 @@ The adapter handles a `grist://` URI scheme with several modes:
 | `grist://<doc_id>` | list of tables in a document |
 | `grist://<doc_id>/<table_id>` | rows from that table |
 | `grist://__orgs__` | list of organizations |
-| `grist://__workspaces__` | list of workspaces |
 | `grist://<doc_id>/__columns__` | column metadata |
 
 ### Filter/sort pushdown

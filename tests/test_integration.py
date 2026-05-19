@@ -24,25 +24,6 @@ class TestOrganizations:
         assert "name" in columns
 
 
-class TestWorkspaces:
-    def test_list_workspaces(self, grist_credentials):
-        adapter = GristAPIAdapter(
-            resource_kind=ResourceKind.WORKSPACES,
-            doc_id=None,
-            table_id=None,
-            query_params={},
-            grist_cfg={
-                "server": grist_credentials["server"],
-                "org_id": grist_credentials["org_id"],
-                "api_key": grist_credentials["api_key"],
-            },
-            cache_cfg={"enabled": False},
-        )
-        columns = adapter.get_columns()
-        assert "id" in columns
-        assert "name" in columns
-
-
 class TestDocuments:
     def test_list_docs(self, grist_credentials):
         adapter = GristAPIAdapter(

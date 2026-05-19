@@ -9,7 +9,6 @@ The adapter maps `grist://` URIs to Grist REST API resources. Each URI resolves 
 | `grist://` | DOCS | list of documents |
 | `grist://__docs__` | DOCS | alias for above |
 | `grist://__orgs__` | ORGS | list of organizations |
-| `grist://__workspaces__` | WORKSPACES | list of workspaces |
 | `grist://<doc_id>` | TABLES | list of tables in document |
 | `grist://<ws_id>/__docs__` | DOCS | documents in a specific workspace |
 | `grist://<doc_id>/<table_id>` | RECORDS | rows from a table |
@@ -26,17 +25,6 @@ The adapter maps `grist://` URIs to Grist REST API resources. Each URI resolves 
 | `createdAt` | DateTime |
 | `updatedAt` | DateTime |
 | `domain` | String |
-| `access` | String |
-
-### WORKSPACES (`grist://__workspaces__`)
-
-| Column | Type |
-|---|---|
-| `id` | String |
-| `name` | String |
-| `createdAt` | DateTime |
-| `updatedAt` | DateTime |
-| `orgDomain` | String |
 | `access` | String |
 
 ### DOCS (`grist://` or `grist://__docs__` or `grist://<ws_id>/__docs__`)
